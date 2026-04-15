@@ -2,5 +2,5 @@ using HetaImporter
 using Test
 
 @testset "HetaImporter.jl" begin
-    # Write your tests here.
+    @testset "Heta-compiler tests" begin include("test_load.jl") end
 end
