@@ -1,5 +1,4 @@
 # HetaImporter
-Julia Importer for Heta models
 
 [![Build Status](https://github.com/hetalang/HetaImporter.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/hetalang/HetaImporter.jl/actions/workflows/CI.yml?query=branch%3Amaster)
 
