@@ -9,11 +9,15 @@ dynms_p0 = zeros(dynms_model.nstatics)
 dynms_model.init_func(dynms_u0, dynms_p0, dynms_model.constants)
 dynms_du = zeros(dynms_model.nstates)
 dynms_model.ode_func(dynms_du, dynms_u0, (x = (dynms_p0, dynms_model.constants),), 0.0)
+dynms_out = zeros(2)
+dynms_saving = dynms_model.saving_generator([:S, :P])
+dynms_saving(dynms_out, dynms_u0, 0.0, (p = (x = (dynms_p0, dynms_model.constants),),))
 
 @test isa(dynms_platform, Platform)
 @test dynms_u0 == [10.0, 0.0]
 @test dynms_p0 == [1.0]
 @test dynms_du == [-0.08, 0.08]
+@test dynms_out == [10.0, 0.0]
 
 platform = load_platform(joinpath(@__DIR__, "models", "onecomp_model"));
 model = platform.models[:nameless];

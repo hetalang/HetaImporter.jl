@@ -1,6 +1,6 @@
 const DYNMS_VERSION = "0.1.0"
 
-const DynMSExpr = Union{Expr,Symbol,Float64}
+const DynMSExpr = Union{Expr,Symbol,Float64,Bool}
 const DynMSVal = Union{Nothing, Symbol, Float64}
 
 abstract type AbstractDynMSEvent end
@@ -96,10 +96,11 @@ function parse_dynms_platform(data::AbstractDict)
   dynms_version == DYNMS_VERSION ||
     throw(ArgumentError("Unsupported DynMS format version: $dynms_version. Supported version is: $DYNMS_VERSION"))
 
-  dynms_models = DynMSModel[]
+  dynms_models = OrderedDict{Symbol,DynMSModel}()
   for model in get(data, "models", Any[])
     isempty_dynms_model(model) && continue
-    push!(dynms_models, _parse_dynms_model(model))
+    dynms_model = parse_dynms_model(model)
+    dynms_models[dynms_model.id] = dynms_model
   end
  
   isempty(dynms_models) && 
@@ -112,6 +113,8 @@ function parse_dynms_platform(data::AbstractDict)
 
   return DynMSPlatform(dynms_models, heta_compiler_version)
 end
+
+parse_dynms_model(model::AbstractDict) = _parse_dynms_model(model)
 
 function isempty_dynms_model(model::AbstractDict)
   return all(isempty(get(model, key, Any[])) for key in (
@@ -145,18 +148,213 @@ function _parse_dynms_model(model::AbstractDict)
   )
 end
 
-#=
-function _dynms_expr_to_julia(expr, ctx::DynMSCompileContext)
+function _parse_dynms_constants(model::AbstractDict)
+  constants = OrderedDict{Symbol,Float64}()
+  for constant in get(model, "constants", Any[])
+    constants[Symbol(string(constant["id"]))] = Float64(constant["value"])
+  end
+  return constants
+end
+
+function _parse_dynms_statics(model::AbstractDict)
+  statics = OrderedDict{Symbol,DynMSExpr}()
+  for state in get(model, "states", Any[])
+    Bool(get(state, "static", false)) || continue
+    id = Symbol(string(state["id"]))
+    statics[id] = _parse_dynms_expr(get(state, "initial", 0.0))
+  end
+  return statics
+end
+
+function _parse_dynms_assignments(model::AbstractDict)
+  assignment_rules = OrderedDict{Symbol,DynMSExpr}()
+  for assignment in get(model, "assignments", Any[])
+    id = Symbol(string(assignment["id"]))
+    assignment_rules[id] = _parse_dynms_expr(assignment["rhs"])
+  end
+  return assignment_rules
+end
+
+function _parse_dynms_states(model::AbstractDict)
+  derivatives = Dict{String,DynMSExpr}()
+  for derivative in get(model, "derivatives", Any[])
+    derivatives[string(derivative["state"])] = _parse_dynms_expr(derivative["rhs"])
+  end
+
+  states = OrderedDict{Symbol,DynMSState}()
+  for state in get(model, "states", Any[])
+    Bool(get(state, "static", false)) && continue
+
+    id = string(state["id"])
+    equation = get(derivatives, id, 0.0)
+    states[Symbol(id)] = DynMSState(
+      _parse_dynms_expr(get(state, "initial", 0.0)),
+      equation,
+      !haskey(derivatives, id)
+    )
+  end
+  return states
+end
+
+function _parse_dynms_time_events(model::AbstractDict)
+  events = OrderedDict{Symbol,DynMSTimeEvent}()
+  for event in get(model, "events", Any[])
+    _dynms_event_kind(event) == :time || continue
+    parsed = _parse_dynms_time_event(model, event)
+    events[parsed.id] = parsed
+  end
+  return events
+end
+
+function _parse_dynms_continuous_events(model::AbstractDict)
+  events = OrderedDict{Symbol,DynMSContinuousEvent}()
+  for event in get(model, "events", Any[])
+    _dynms_event_kind(event) == :continuous || continue
+    parsed = _parse_dynms_continuous_event(model, event)
+    events[parsed.id] = parsed
+  end
+  return events
+end
+
+function _parse_dynms_discrete_events(model::AbstractDict)
+  events = OrderedDict{Symbol,DynMSDiscreteEvent}()
+  for event in get(model, "events", Any[])
+    _dynms_event_kind(event) == :discrete || continue
+    parsed = _parse_dynms_discrete_event(model, event)
+    events[parsed.id] = parsed
+  end
+  return events
+end
+
+function _parse_dynms_stop_events(model::AbstractDict)
+  events = OrderedDict{Symbol,DynMSStopEvent}()
+  for event in get(model, "events", Any[])
+    _dynms_event_kind(event) == :stop || continue
+    parsed = _parse_dynms_stop_event(event)
+    events[parsed.id] = parsed
+  end
+  return events
+end
+
+function _parse_dynms_observables(model::AbstractDict)
+  return Symbol[Symbol(string(obs["symbol"])) for obs in get(model, "observables", Any[])]
+end
+
+function _parse_dynms_time_event(model::AbstractDict, event)
+  trigger = event["trigger"]
+  state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
+  return DynMSTimeEvent(
+    Symbol(string(event["id"])),
+    _parse_dynms_value(get(trigger, "start", 0.0)),
+    _parse_dynms_optional_value(get(trigger, "period", nothing)),
+    _parse_dynms_optional_value(get(trigger, "stop", nothing)),
+    state_affects,
+    discrete_affects,
+    Bool(get(trigger, "atStart", false)),
+    Bool(get(event, "active", true))
+  )
+end
+
+function _parse_dynms_continuous_event(model::AbstractDict, event)
+  state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
+  return DynMSContinuousEvent(
+    Symbol(string(event["id"])),
+    _parse_dynms_condition(event["trigger"]["rhs"]),
+    state_affects,
+    discrete_affects,
+    Bool(get(event["trigger"], "atStart", false)),
+    Bool(get(event, "active", true))
+  )
+end
+
+function _parse_dynms_discrete_event(model::AbstractDict, event)
+  state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
+  return DynMSDiscreteEvent(
+    Symbol(string(event["id"])),
+    _parse_dynms_condition(event["trigger"]["rhs"]),
+    state_affects,
+    discrete_affects,
+    Bool(get(event["trigger"], "atStart", false)),
+    Bool(get(event, "active", true))
+  )
+end
+
+function _parse_dynms_stop_event(event)
+  return DynMSStopEvent(
+    Symbol(string(event["id"])),
+    _parse_dynms_condition(event["trigger"]["rhs"]),
+    Bool(get(event["trigger"], "atStart", false)),
+    Bool(get(event, "active", true))
+  )
+end
+
+function _parse_dynms_event_affects(model::AbstractDict, event)
+  dynamic_state_ids = Set(string(state["id"]) for state in get(model, "states", Any[]) if !Bool(get(state, "static", false)))
+  static_state_ids = Set(string(state["id"]) for state in get(model, "states", Any[]) if Bool(get(state, "static", false)))
+  state_affects = OrderedDict{Symbol,DynMSExpr}()
+  discrete_affects = OrderedDict{Symbol,DynMSExpr}()
+
+  for action in get(event, "actions", Any[])
+    state_id = string(action["state"])
+    target = Symbol(state_id)
+    rhs = _parse_dynms_expr(action["rhs"])
+
+    if state_id in dynamic_state_ids
+      state_affects[target] = rhs
+    elseif state_id in static_state_ids
+      discrete_affects[target] = rhs
+    else
+      throw(ArgumentError("DynMS event $(event["id"]) updates unknown state '$state_id'."))
+    end
+  end
+
+  return state_affects, discrete_affects
+end
+
+function _dynms_event_kind(event)
+  trigger = event["trigger"]
+  trigger_type = string(trigger["type"])
+
+  trigger_type == "time" && return :time
+  trigger_type == "stop" && return :stop
+
+  detection_type = string(get(trigger, "detection", trigger_type == "crossing" ? "root" : "step"))
+  trigger_type == "crossing" && detection_type == "root" && return :continuous
+  trigger_type == "conditional" && detection_type == "root" && return :continuous
+  trigger_type == "conditional" && detection_type == "step" && return :discrete
+
+  throw(ArgumentError("Unsupported DynMS event trigger type/detection combination: type='$trigger_type', detection='$detection_type'."))
+end
+
+function _parse_dynms_optional_value(value)
+  isnothing(value) && return nothing
+  return _parse_dynms_value(value)
+end
+
+function _parse_dynms_value(value)
+  parsed = _parse_dynms_expr(value)
+  parsed isa Float64 && return parsed
+  parsed isa Symbol && return parsed
+  throw(ArgumentError("DynMS time-event value must be numeric or symbolic, got: $parsed"))
+end
+
+function _parse_dynms_condition(expr)
+  parsed = _parse_dynms_expr(expr)
+  parsed isa Union{Expr,Symbol} && return parsed
+  throw(ArgumentError("DynMS event condition must parse to Expr or Symbol, got: $parsed"))
+end
+
+function _parse_dynms_expr(expr)
   payload = _dynms_expr_payload(expr)
-  payload isa Number && return payload
+  payload isa Number && return Float64(payload)
   payload isa Bool && return payload
 
   try
     mathjson_expr = parse(MathJSON.MathJSONFormat, JSON.json(payload))
-    return _dynms_mathjson_to_julia(mathjson_expr, ctx)
+    return _dynms_mathjson_to_julia(mathjson_expr)
   catch err
     @warn "MathJSON.jl failed to parse DynMS expression; using fallback parser." expr exception=(err, catch_backtrace())
-    return _dynms_raw_expr_to_julia(payload, ctx)
+    return _dynms_raw_expr_to_julia(payload)
   end
 end
 
@@ -164,52 +362,54 @@ function _dynms_expr_payload(expr)
   if expr isa AbstractDict && haskey(expr, "expr")
     format = string(get(expr, "format", "math-json"))
     format == "math-json" ||
-      error("Unsupported DynMS expression format '$format'. Only 'math-json' is supported.")
+      throw(ArgumentError("Unsupported DynMS expression format '$format'. Only 'math-json' is supported."))
     return expr["expr"]
   end
 
   return expr
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.NumberExpr, ctx::DynMSCompileContext)
-  return expr.value
+function _dynms_mathjson_to_julia(expr::MathJSON.NumberExpr)
+  return Float64(expr.value)
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.SymbolExpr, ctx::DynMSCompileContext)
-  return _dynms_symbol_to_julia(expr.name, ctx)
+function _dynms_mathjson_to_julia(expr::MathJSON.SymbolExpr)
+  return _dynms_symbol_to_julia(expr.name)
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.StringExpr, ctx::DynMSCompileContext)
-  error("Unsupported DynMS MathJSON string literal: $(expr.value)")
+function _dynms_mathjson_to_julia(expr::MathJSON.StringExpr)
+  throw(ArgumentError("Unsupported DynMS MathJSON string literal: $(expr.value)"))
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.FunctionExpr, ctx::DynMSCompileContext)
-  args = Any[_dynms_mathjson_to_julia(arg, ctx) for arg in expr.arguments]
+function _dynms_mathjson_to_julia(expr::MathJSON.FunctionExpr)
+  args = Any[_dynms_mathjson_to_julia(arg) for arg in expr.arguments]
   return _dynms_operator_to_julia(expr.operator, args)
 end
 
-function _dynms_raw_expr_to_julia(payload, ctx::DynMSCompileContext)
-  if payload isa Number || payload isa Bool
+function _dynms_raw_expr_to_julia(payload)
+  if payload isa Number
+    return Float64(payload)
+  elseif payload isa Bool
     return payload
   elseif payload isa AbstractString
-    return _dynms_symbol_to_julia(payload, ctx)
+    return _dynms_symbol_to_julia(payload)
   elseif payload isa AbstractVector
-    isempty(payload) && error("DynMS MathJSON expression cannot be an empty array.")
+    isempty(payload) && throw(ArgumentError("DynMS MathJSON expression cannot be an empty array."))
     operator = Symbol(payload[1])
-    args = Any[_dynms_raw_expr_to_julia(arg, ctx) for arg in payload[2:end]]
+    args = Any[_dynms_raw_expr_to_julia(arg) for arg in payload[2:end]]
     return _dynms_operator_to_julia(operator, args)
   elseif payload isa AbstractDict
     haskey(payload, "num") && return _dynms_parse_mathjson_number(payload["num"])
-    haskey(payload, "sym") && return _dynms_symbol_to_julia(string(payload["sym"]), ctx)
-    haskey(payload, "str") && error("Unsupported DynMS MathJSON string literal: $(payload["str"])")
-    haskey(payload, "fn") && return _dynms_raw_expr_to_julia(payload["fn"], ctx)
+    haskey(payload, "sym") && return _dynms_symbol_to_julia(string(payload["sym"]))
+    haskey(payload, "str") && throw(ArgumentError("Unsupported DynMS MathJSON string literal: $(payload["str"])"))
+    haskey(payload, "fn") && return _dynms_raw_expr_to_julia(payload["fn"])
   end
 
-  error("Unsupported DynMS expression: $payload")
+  throw(ArgumentError("Unsupported DynMS expression: $payload"))
 end
 
 function _dynms_parse_mathjson_number(x)
-  x isa Number && return x
+  x isa Number && return Float64(x)
   s = string(x)
   s == "Infinity" && return Inf
   s == "+Infinity" && return Inf
@@ -218,9 +418,7 @@ function _dynms_parse_mathjson_number(x)
   return parse(Float64, s)
 end
 
-function _dynms_symbol_to_julia(name::AbstractString, ctx::DynMSCompileContext)
-  haskey(ctx.refs, name) && return ctx.refs[name]
-
+function _dynms_symbol_to_julia(name::AbstractString)
   name == "pi" && return :pi
   name == "Pi" && return :pi
   name == "e" && return :(Base.MathConstants.e)
@@ -228,12 +426,12 @@ function _dynms_symbol_to_julia(name::AbstractString, ctx::DynMSCompileContext)
   name == "True" && return true
   name == "False" && return false
 
-  error("Unknown DynMS symbol '$name'.")
+  return Symbol(name)
 end
 
 function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any})
-  operator == :Add && return _dynms_call(:+, args; empty=0)
-  operator == :Multiply && return _dynms_call(:*, args; empty=1)
+  operator == :Add && return _dynms_call(:+, args; empty=0.0)
+  operator == :Multiply && return _dynms_call(:*, args; empty=1.0)
   operator == :Negate && return :(-$(only(args)))
   operator == :Subtract && return length(args) == 1 ? :(-$(only(args))) : _dynms_call(:-, args)
   operator == :Divide && return length(args) == 1 ? :(inv($(only(args)))) : _dynms_call(:/, args)
@@ -273,7 +471,7 @@ function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any})
 
   operator == :If && return :($(args[1]) ? $(args[2]) : $(args[3]))
 
-  error("Unsupported DynMS MathJSON operator '$operator'.")
+  throw(ArgumentError("Unsupported DynMS MathJSON operator '$operator'."))
 end
 
 function _dynms_call(op::Symbol, args::Vector{Any}; empty=nothing)
@@ -296,4 +494,3 @@ function _dynms_short_circuit(op::Symbol, args::Vector{Any}; empty)
   end
   return ex
 end
-=#

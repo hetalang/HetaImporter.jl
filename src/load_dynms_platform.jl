@@ -33,7 +33,7 @@ end
 function _platform_tuple(dynms::DynMSPlatform)
   models_nt = (; (
     model.id => _dynms_model_tuple(model)
-    for model in dynms.models
+    for model in values(dynms.models)
   )...)
 
   return (models_nt, (), dynms.version)
@@ -75,7 +75,7 @@ function _dynms_model_tuple(dynms::DynMSModel)
   statics_id = Tuple(keys(dynms.statics))
   records_output = (; (obs => true for obs in dynms.observables)...)
   events_active = (; (k => is_active(v) for (k, v) in merge_events(dynms))...)
-  dynamic_nonss = (; (k => is_algebraic(v) for (k, v) in dynms.states)...)
+  dynamic_nonss = (; (k => !is_algebraic(v) for (k, v) in dynms.states)...)
 
   return (
     _dynms_runtime_function(_dynms_init_function(dynms)),
@@ -121,14 +121,18 @@ function _dynms_init_function(dynms::DynMSModel)
   stmts = [:(t = 0.0)]
   _add_dynms_constant_bindings!(stmts, dynms)
 
-  # Do we need it here?
-  _add_dynms_assignment_bindings!(stmts, dynms)
-
-  for (i, state) in enumerate(dynms.states)
-    push!(stmts, :(__u0__[$i] = $(state.initial)))
+  for (id, state) in dynms.states
+    push!(stmts, Expr(:(=), id, state.initial))
   end
-  for (i, static_initial) in enumerate(values(dynms.statics))
-    push!(stmts, :(__p0__[$i] = $(static_initial)))
+  for (id, static_initial) in dynms.statics
+    push!(stmts, Expr(:(=), id, static_initial))
+  end
+
+  for (i, id) in enumerate(keys(dynms.states))
+    push!(stmts, :(__u0__[$i] = $id))
+  end
+  for (i, id) in enumerate(keys(dynms.statics))
+    push!(stmts, :(__p0__[$i] = $id))
   end
 
   push!(stmts, :(return nothing))
@@ -140,8 +144,8 @@ function _dynms_ode_function(dynms::DynMSModel)
   _add_dynms_header_bindings!(stmts, dynms; integrator_p=false)
   _add_dynms_assignment_bindings!(stmts, dynms)
 
-  for (i, state_rhs) in enumerate(values(dynms.states))
-    push!(stmts, :(__du__[$i] = $state_rhs))
+  for (i, state) in enumerate(values(dynms.states))
+    push!(stmts, :(__du__[$i] = $(state.equation)))
   end
 
   push!(stmts, :(return nothing))
@@ -150,27 +154,30 @@ end
 
 function _dynms_saving_generator(dynms::DynMSModel)
   record_ids = dynms.observables
-
-  stmts = []
-  _add_dynms_header_bindings!(stmts, dynms; integrator_p=true)
-  _add_dynms_assignment_bindings!(stmts, dynms)
-
-  saving_func_body = Expr(:block, stmts...)
+  cache = Dict{Tuple{Vararg{Symbol}},Any}()
 
   function saving_generator(__outputIds__::Vector{Symbol})
     wrong_ids = setdiff(__outputIds__, record_ids)
     !isempty(wrong_ids) && throw("The following observables have not been found in the model's Records: $(wrong_ids)")
-    
-    __out_expr__ = Expr(:block)
-    [push!(__out_expr__.args, :(__out__[$i] = $obs)) for (i,obs) in enumerate(__outputIds__)]
 
-    @eval function(__out__, __u__, t, __integrator__)
-
-      $(saving_func_body)
-      $(__out_expr__)
-      return nothing
+    output_key = Tuple(__outputIds__)
+    return get!(cache, output_key) do
+      _dynms_runtime_function(_dynms_saving_function(dynms, __outputIds__))
     end
-  end 
+  end
+end
+
+function _dynms_saving_function(dynms::DynMSModel, output_ids::Vector{Symbol})
+  stmts = []
+  _add_dynms_header_bindings!(stmts, dynms; integrator_p=true)
+  _add_dynms_assignment_bindings!(stmts, dynms)
+
+  for (i, obs) in enumerate(output_ids)
+    push!(stmts, :(__out__[$i] = $obs))
+  end
+
+  push!(stmts, :(return nothing))
+  return _dynms_function(Symbol(dynms.id, "_saving_func_"), [:__out__, :__u__, :t, :__integrator__], stmts)
 end
 
 _dynms_events_namedtuple(dynms::DynMSModel, events_dict) =
@@ -238,10 +245,15 @@ function _dynms_affect_function(dynms::DynMSModel, event)
   _add_dynms_header_bindings!(stmts, dynms; integrator_p=true, integrator_u=true)
   _add_dynms_assignment_bindings!(stmts, dynms)
 
-  for (idx, rhs_expr) in enumerate(values(event.state_affects))
+  state_index = Dict(id => i for (i, id) in enumerate(keys(dynms.states)))
+  static_index = Dict(id => i for (i, id) in enumerate(keys(dynms.statics)))
+
+  for (id, rhs_expr) in event.state_affects
+    idx = state_index[id]
     push!(stmts, :(__integrator__.u[$idx] = $rhs_expr))
   end
-  for (idx, rhs_expr) in enumerate(values(event.discrete_affects))
+  for (id, rhs_expr) in event.discrete_affects
+    idx = static_index[id]
     push!(stmts, :(__integrator__.p[$idx] = $rhs_expr))
   end
 
@@ -254,20 +266,20 @@ function _dynms_affect_function(dynms::DynMSModel, event)
 end
 
 _add_dynms_constant_bindings!(stmts, dynms::DynMSModel) =
-  push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = :__constants__ ))
+  push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = __constants__ ))
 
 function _add_dynms_header_bindings!(stmts, dynms::DynMSModel; integrator_p::Bool=false, integrator_u::Bool=false)
   if integrator_p
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.statics)...)) = :(__integrator__.p.x[1]) ))
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = :(__integrator__.p.x[1]) ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.statics)...)) = __integrator__.p.x[1] ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = __integrator__.p.x[2] ))
   else
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.statics)...)) = :(__p__.x[1]) ))
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = :(__p__.x[2]) ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.statics)...)) = __p__.x[1] ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = __p__.x[2] ))
   end
   if integrator_u
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.states)...)) = :__integrator__.u ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.states)...)) = __integrator__.u ))
   else
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.states)...)) = :__u__ ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.states)...)) = __u__ ))
   end
 
   return nothing
@@ -292,13 +304,13 @@ function _dynms_platform_source(dynms::DynMSPlatform, dynms_tuple::Tuple)
   println(io, "(function()")
   println(io)
 
-  for model in dynms.models
+  for model in values(dynms.models)
     _dynms_model_source(io, model, dynms_tuple)
   end
 
   println(io, "return (")
   println(io, "  (")
-  for model in dynms.models
+  for model in values(dynms.models)
     println(io, "    $(model.id) = $(model.id)_model_,")
   end
   println(io, "  ),")
