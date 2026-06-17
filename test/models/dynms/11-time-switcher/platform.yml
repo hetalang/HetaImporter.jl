@@ -1,0 +1,20 @@
+id: mm
+builderVersion: '*'
+options:
+  debug: false
+  unitsCheck: false
+importModule:
+  type: heta
+  source: src/index.heta
+export:
+  - {format: JSON}
+  - {format: SLV}
+  - {format: DBSolve}
+  - {format: Simbio}
+  - {format: Matlab}
+  - {format: Julia}
+  - {format: SBML}
+  - {format: Mrgsolve}
+  - {format: MT}
+  - {format: DynMS}
+  

@@ -1,0 +1,28 @@
+include ./qsp-units.heta type heta;
+
+// this block unites elements with the same space
+namespace mm begin
+  '''Note for the Default compartment'''
+  default_comp @Compartment { title: Default compartment, units: L };
+  default_comp .= 1;
+
+  S @Species { title: substrate, compartment: default_comp, units: uM, output: true };
+  P @Species { title: product,  compartment: default_comp, units: uM, output: true };
+  ''' Transformation of __substrate__ to __product__ '''
+  r1 @Reaction {
+    title: Michaelis-Menten reaction,
+    actors: S -> P,
+    units: umole/minute
+  };
+
+  r1 := Vmax*S/(Km+S)*default_comp; // S is used here but assigned below
+  S .= 10; // S should be initialialized after creation
+  P .= 0;
+
+  t {units: minute};
+  Vmax @Const = 0.1 {units: uM/minute}; // this is global constant available for any scoped equation
+  Km @Const = 2.5 {units: uM};
+
+  //ss1 @StopSwitcher {trigger: t > 10};
+  //ss2 @StopSwitcher {trigger: S < P};
+end

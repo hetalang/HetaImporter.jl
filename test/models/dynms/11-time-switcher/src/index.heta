@@ -1,0 +1,42 @@
+
+kabs @Const = 0.01; // constant of absorption
+kel @Const = 0.01; // constant of elimination
+
+a0 @Species {compartment: comp0, isAmount: true, units: mole};
+s1 @Species {compartment: comp1, output: true};
+s2 @Species {compartment: comp1, output: true};
+comp0 @Compartment {output: true};
+comp1 @Compartment {output: true};
+vabs @Reaction {actors: a0 -> s1};
+vel @Reaction {actors: s1 ->};
+
+comp0 .= 1;
+comp1 .= 5.2;
+vabs := kabs*a0;
+vel := kel*s1*comp1;
+a0 []= 0; // initial value
+s1 []= 0;
+s2 []= 0; // static
+
+sw0 @TimeSwitcher {
+  start: 40
+};
+
+sw1 @TimeSwitcher {
+  start: 0, // start at zero time
+  stop: 60,
+  period: 12,
+  atStart: true,
+  active: false
+};
+a0 [sw1]= a0 + 10;
+comp1 [sw1]= 6;
+
+sw2_start @Const = 5; 
+sw2 @TimeSwitcher {
+  start: sw2_start, // ??? error
+  period: 24,
+  //stop: 150
+};
+s1 [sw2]= s1 + 2;
+s2 [sw2]= s2 + 2;

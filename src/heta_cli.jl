@@ -83,7 +83,7 @@ Arguments:
 - `meta_dir` : meta directory path. Default is `"meta"`
 - `source` : path to the main heta module. Default is `"index.heta"`
 - `type` : type of the source file. Default is `"heta"`
-- `export_format` : export the model to the specified format: `Julia,JSON`, `{format:SBML,version:L3V1},JSON`
+- `export_format` : export the model to the specified format: `julia,dynms`,`{format:SBML,version:L3V1}`
 """
 function heta_build(
   target_dir::AbstractString;

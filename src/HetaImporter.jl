@@ -1,11 +1,17 @@
 module HetaImporter
 
-using DataStructures, LinearAlgebra
+using JSON
+using MathJSON
+using RuntimeGeneratedFunctions
+using DataStructures
+using LinearAlgebra
 using Pkg, Pkg.Artifacts
 import Base: SHA1
 
+RuntimeGeneratedFunctions.init(@__MODULE__)
+
 # heta-compiler supported version
-const HETA_COMPILER_VERSION = "0.11.0"
+const HETA_COMPILER_VERSION = "0.12.0"
 
 function heta_compiler_load()
     artifact_info = artifact_meta("heta_app", joinpath(@__DIR__, "..", "Artifacts.toml"))
@@ -21,10 +27,14 @@ const heta_exe_path = heta_path === nothing ? heta_exe_name : joinpath(heta_path
 
 include("heta_cli.jl")
 include("structs.jl")
-include("load.jl")
+include("load_platform.jl")
+include("parse_dynms.jl")
+include("load_dynms_platform.jl")
 
 export heta_version, heta_help, heta_init, heta_build
 export Platform, Model
-export load_platform, load_model, load_jlplatform, load_jlmodel
+export load_platform, load_model, load_jl_platform, load_jl_model, load_jlplatform, load_jlmodel
+export load_dynms_platform, load_dynms_model, parse_dynms_platform, parse_dynms_model
+export write_dynms_julia 
 
 end
