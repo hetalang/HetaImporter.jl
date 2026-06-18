@@ -26,13 +26,11 @@ const heta_exe_name = Sys.iswindows() ? "heta-compiler.exe" : "heta-compiler"
 const heta_exe_path = heta_path === nothing ? heta_exe_name : joinpath(heta_path, heta_exe_name)
 
 include("heta_cli.jl")
-include("structs.jl")
 include("load_platform.jl")
 include("parse_dynms.jl")
 include("load_dynms_platform.jl")
 
 export heta_version, heta_help, heta_init, heta_build
-export Platform, Model
 export load_platform, load_model, load_jl_platform, load_jl_model, load_jlplatform, load_jlmodel
 export load_dynms_platform, load_dynms_model, parse_dynms_platform, parse_dynms_model
 export write_dynms_julia 

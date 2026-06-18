@@ -50,15 +50,28 @@ function load_platform(
   build_retcode == 1 && throw("Compilation errors. Likely there is an error in the Heta model. Please check the log file for details.")
 
   # load model to Main
-  platform = _load_platform(model_path, Val(load_format)) 
-
-  rm_out && rm(dist_dir; force=true, recursive=true)
+  platform = _load_platform(model_path, Val(load_format); rm_out, dist_dir) 
     
   return platform
 end
 
-_load_platform(model_path::AbstractString, ::Val{:julia}) = load_jl_platform(model_path)
-_load_platform(model_path::AbstractString, ::Val{:dynms}) = load_dynms_platform(model_path)
+function _load_platform(model_path::AbstractString, ::Val{:julia}; rm_out::Bool=true, dist_dir::AbstractString="")
+  platform = load_jl_platform(model_path)
+  _cleanup_dist_dir(rm_out, dist_dir)
+  return platform
+end
+
+function _load_platform(model_path::AbstractString, ::Val{:dynms}; rm_out::Bool=true, dist_dir::AbstractString="")
+  save_julia = rm_out ? nothing : joinpath(dist_dir, JULIA_MODEL_DIR, JULIA_MODEL_NAME)
+  platform = load_dynms_platform(model_path; save_julia)
+  _cleanup_dist_dir(rm_out, dist_dir)
+  return platform
+end
+
+function _cleanup_dist_dir(rm_out::Bool, dist_dir::AbstractString)
+  rm_out && !isempty(dist_dir) && rm(dist_dir; force=true, recursive=true)
+  return nothing
+end
 
 function get_model_path_and_export_format(dist_dir::AbstractString, spaceFilter, ::Val{:julia})
   filepath = JULIA_MODEL_DIR
