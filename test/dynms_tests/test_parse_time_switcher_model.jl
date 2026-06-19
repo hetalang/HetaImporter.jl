@@ -1,7 +1,7 @@
 @testset "DynMS parser: time switcher" begin
   dynms_path = joinpath(@__DIR__, "..", "models", "dynms", "11-time-switcher", "dist", "dynms", "output.dynms.json")
-  platform = parse_dynms_platform(dynms_path)
-  model = platform.models[:nameless]
+  spec = parse_dynms_spec(dynms_path)
+  model = spec.models[:nameless]
 
   @test collect(keys(model.constants)) == [:kabs, :kel, :sw2_start]
   @test collect(keys(model.states)) == [:a0, :s1_amt_]

@@ -1,11 +1,11 @@
 @testset "DynMS parser: hello world" begin
   dynms_path = joinpath(@__DIR__, "..", "models", "dynms", "0-hello-world", "dist", "dynms", "output.dynms.json")
-  platform = parse_dynms_platform(dynms_path)
+  spec = parse_dynms_spec(dynms_path)
 
-  @test platform.version == "0.11.1"
-  @test collect(keys(platform.models)) == [:mm]
+  @test spec.version == "0.11.1"
+  @test collect(keys(spec.models)) == [:mm]
 
-  model = platform.models[:mm]
+  model = spec.models[:mm]
   @test model.id == :mm
   @test collect(keys(model.constants)) == [:Vmax, :Km]
   @test collect(values(model.constants)) == [0.1, 2.5]

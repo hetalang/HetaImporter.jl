@@ -1,30 +1,30 @@
 const DYNMS_VERSION = "0.1.0"
 
 const DynMSExpr = Union{Expr,Symbol,Float64,Bool}
-const DynMSVal = Union{Nothing, Symbol, Float64}
+const DynMSVal = Union{Symbol, Float64}
 
-abstract type AbstractDynMSEvent end
+abstract type AbstractDynMSEventDef end
 
-struct DynMSState
+struct DynMSStateDef
   initial::DynMSExpr
   equation::DynMSExpr
   is_algebraic::Bool
 end
 
-is_algebraic(state::DynMSState) = state.is_algebraic
+is_algebraic(state::DynMSStateDef) = state.is_algebraic
 
-struct DynMSTimeEvent <: AbstractDynMSEvent
+struct DynMSTimeEventDef <: AbstractDynMSEventDef
   id::Symbol
   start::DynMSVal
-  period::DynMSVal
-  stop::DynMSVal
+  period::Union{DynMSVal, Nothing}
+  stop::Union{DynMSVal, Nothing}
   state_affects::OrderedDict{Symbol,DynMSExpr}
   discrete_affects::OrderedDict{Symbol,DynMSExpr}
   initial_affect::Bool
   is_active::Bool
 end
 
-struct DynMSContinuousEvent <: AbstractDynMSEvent
+struct DynMSContinuousEventDef <: AbstractDynMSEventDef
   id::Symbol
   condition::Union{Expr,Symbol}
   state_affects::OrderedDict{Symbol,DynMSExpr}
@@ -33,7 +33,7 @@ struct DynMSContinuousEvent <: AbstractDynMSEvent
   is_active::Bool
 end
 
-struct DynMSDiscreteEvent <: AbstractDynMSEvent
+struct DynMSDiscreteEventDef <: AbstractDynMSEventDef
   id::Symbol  
   condition::Union{Expr,Symbol}
   state_affects::OrderedDict{Symbol,DynMSExpr}
@@ -42,61 +42,68 @@ struct DynMSDiscreteEvent <: AbstractDynMSEvent
   is_active::Bool
 end
 
-struct DynMSStopEvent <: AbstractDynMSEvent
+struct DynMSStopEventDef <: AbstractDynMSEventDef
   id::Symbol
   condition::Union{Expr,Symbol}
   initial_affect::Bool
   is_active::Bool
 end
 
-event_id(event::AbstractDynMSEvent) = event.id
-is_active(event::AbstractDynMSEvent) = event.is_active
-has_initial_affect(event::AbstractDynMSEvent) = event.initial_affect
+event_id(event::AbstractDynMSEventDef) = event.id
+is_active(event::AbstractDynMSEventDef) = event.is_active
+has_initial_affect(event::AbstractDynMSEventDef) = event.initial_affect
 
 # Internal DynMS IR boundary:
-# JSON parsing should stop here. Current Platform loading, future ODEProblem
-# loading, and future ModelingToolkit system construction should be adapters over
-# this parsed DynMSModel/DynMSPlatform plus generated DynMSFunction objects.
-struct DynMSModel
+# JSON parsing should stop here. Julia source generation, future ODEProblem
+# construction, and future ModelingToolkit system construction should be
+# adapters over this parsed DynMSModelDef/DynMSSpec plus generated
+# DynMSJuliaFunction objects.
+struct DynMSModelDef
   id::Symbol
   constants::OrderedDict{Symbol,Float64} # consider using parameters term in the future
   statics::OrderedDict{Symbol,DynMSExpr} # consider using discrete_parameters (? and dependent_parameters) term in the future
   assignment_rules::OrderedDict{Symbol,DynMSExpr}
-  states::OrderedDict{Symbol,DynMSState}
-  time_events::OrderedDict{Symbol,DynMSTimeEvent}
-  continuous_events::OrderedDict{Symbol,DynMSContinuousEvent}
-  discrete_events::OrderedDict{Symbol,DynMSDiscreteEvent}
-  stop_events::OrderedDict{Symbol,DynMSStopEvent}
+  states::OrderedDict{Symbol,DynMSStateDef}
+  time_events::OrderedDict{Symbol,DynMSTimeEventDef}
+  continuous_events::OrderedDict{Symbol,DynMSContinuousEventDef}
+  discrete_events::OrderedDict{Symbol,DynMSDiscreteEventDef}
+  stop_events::OrderedDict{Symbol,DynMSStopEventDef}
   observables::Vector{Symbol}
 end
 
-merge_events(model::DynMSModel) = merge(model.time_events, model.continuous_events, model.discrete_events, model.stop_events)
+merge_events(model::DynMSModelDef) = merge(model.time_events, model.continuous_events, model.discrete_events, model.stop_events)
 
-struct DynMSPlatform
-  models::OrderedDict{Symbol,DynMSModel}
+struct DynMSSpec
+  models::OrderedDict{Symbol,DynMSModelDef}
   version::String
 end
 
-struct DynMSCompileContext
-  refs::Dict{String,Symbol}
-end
-
-struct DynMSFunction
+struct DynMSJuliaFunction
   name::Symbol
   args::Vector{Symbol}
   body::Expr
 end
 
-function parse_dynms_platform(dynms_json::AbstractString)
-  return parse_dynms_platform(JSON.parsefile(dynms_json))
+"""
+    parse_dynms_spec(dynms_json::AbstractString)
+    parse_dynms_spec(data::AbstractDict)
+
+Parse a DynMS JSON file or already-loaded JSON dictionary into a `DynMSSpec`.
+
+The returned specification contains parsed model definitions, Julia expression
+trees for mathematical expressions, event definitions, and metadata from the
+DynMS generator.
+"""
+function parse_dynms_spec(dynms_json::AbstractString)
+  return parse_dynms_spec(JSON.parsefile(dynms_json))
 end
 
-function parse_dynms_platform(data::AbstractDict)
+function parse_dynms_spec(data::AbstractDict)
   dynms_version = string(get(data, "dynms", DYNMS_VERSION))
   dynms_version == DYNMS_VERSION ||
     throw(ArgumentError("Unsupported DynMS format version: $dynms_version. Supported version is: $DYNMS_VERSION"))
 
-  dynms_models = OrderedDict{Symbol,DynMSModel}()
+  dynms_models = OrderedDict{Symbol,DynMSModelDef}()
   for model in get(data, "models", Any[])
     isempty_dynms_model(model) && continue
     dynms_model = parse_dynms_model(model)
@@ -111,9 +118,17 @@ function parse_dynms_platform(data::AbstractDict)
     throw(ArgumentError("DynMS JSON does not include heta-compiler version. 
     This likely means that the JSON was not generated by heta-compiler version compatible with HetaImporter."))
 
-  return DynMSPlatform(dynms_models, heta_compiler_version)
+  return DynMSSpec(dynms_models, heta_compiler_version)
 end
 
+"""
+    parse_dynms_model(model::AbstractDict)
+
+Parse one DynMS model dictionary into a `DynMSModelDef`.
+
+This is mainly useful when working with a model entry extracted from a DynMS
+document. For normal use, prefer [`parse_dynms_spec`](@ref).
+"""
 parse_dynms_model(model::AbstractDict) = _parse_dynms_model(model)
 
 function isempty_dynms_model(model::AbstractDict)
@@ -134,7 +149,7 @@ function _parse_dynms_model(model::AbstractDict)
   stop_events = _parse_dynms_stop_events(model)
   observables = _parse_dynms_observables(model)
 
-  return DynMSModel(
+  return DynMSModelDef(
     Symbol(model["id"]),
     constants,
     statics,
@@ -181,13 +196,13 @@ function _parse_dynms_states(model::AbstractDict)
     derivatives[string(derivative["state"])] = _parse_dynms_expr(derivative["rhs"])
   end
 
-  states = OrderedDict{Symbol,DynMSState}()
+  states = OrderedDict{Symbol,DynMSStateDef}()
   for state in get(model, "states", Any[])
     Bool(get(state, "static", false)) && continue
 
     id = string(state["id"])
     equation = get(derivatives, id, 0.0)
-    states[Symbol(id)] = DynMSState(
+    states[Symbol(id)] = DynMSStateDef(
       _parse_dynms_expr(get(state, "initial", 0.0)),
       equation,
       !haskey(derivatives, id)
@@ -197,7 +212,7 @@ function _parse_dynms_states(model::AbstractDict)
 end
 
 function _parse_dynms_time_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSTimeEvent}()
+  events = OrderedDict{Symbol,DynMSTimeEventDef}()
   for event in get(model, "events", Any[])
     _dynms_event_kind(event) == :time || continue
     parsed = _parse_dynms_time_event(model, event)
@@ -207,7 +222,7 @@ function _parse_dynms_time_events(model::AbstractDict)
 end
 
 function _parse_dynms_continuous_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSContinuousEvent}()
+  events = OrderedDict{Symbol,DynMSContinuousEventDef}()
   for event in get(model, "events", Any[])
     _dynms_event_kind(event) == :continuous || continue
     parsed = _parse_dynms_continuous_event(model, event)
@@ -217,7 +232,7 @@ function _parse_dynms_continuous_events(model::AbstractDict)
 end
 
 function _parse_dynms_discrete_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSDiscreteEvent}()
+  events = OrderedDict{Symbol,DynMSDiscreteEventDef}()
   for event in get(model, "events", Any[])
     _dynms_event_kind(event) == :discrete || continue
     parsed = _parse_dynms_discrete_event(model, event)
@@ -227,7 +242,7 @@ function _parse_dynms_discrete_events(model::AbstractDict)
 end
 
 function _parse_dynms_stop_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSStopEvent}()
+  events = OrderedDict{Symbol,DynMSStopEventDef}()
   for event in get(model, "events", Any[])
     _dynms_event_kind(event) == :stop || continue
     parsed = _parse_dynms_stop_event(event)
@@ -243,7 +258,7 @@ end
 function _parse_dynms_time_event(model::AbstractDict, event)
   trigger = event["trigger"]
   state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
-  return DynMSTimeEvent(
+  return DynMSTimeEventDef(
     Symbol(string(event["id"])),
     _parse_dynms_value(get(trigger, "start", 0.0)),
     _parse_dynms_optional_value(get(trigger, "period", nothing)),
@@ -257,7 +272,7 @@ end
 
 function _parse_dynms_continuous_event(model::AbstractDict, event)
   state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
-  return DynMSContinuousEvent(
+  return DynMSContinuousEventDef(
     Symbol(string(event["id"])),
     _parse_dynms_condition(event["trigger"]["rhs"]),
     state_affects,
@@ -269,7 +284,7 @@ end
 
 function _parse_dynms_discrete_event(model::AbstractDict, event)
   state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
-  return DynMSDiscreteEvent(
+  return DynMSDiscreteEventDef(
     Symbol(string(event["id"])),
     _parse_dynms_condition(event["trigger"]["rhs"]),
     state_affects,
@@ -280,7 +295,7 @@ function _parse_dynms_discrete_event(model::AbstractDict, event)
 end
 
 function _parse_dynms_stop_event(event)
-  return DynMSStopEvent(
+  return DynMSStopEventDef(
     Symbol(string(event["id"])),
     _parse_dynms_condition(event["trigger"]["rhs"]),
     Bool(get(event["trigger"], "atStart", false)),
@@ -314,13 +329,21 @@ end
 function _dynms_event_kind(event)
   trigger = event["trigger"]
   trigger_type = string(trigger["type"])
+  detection_type = string(get(trigger, "detection", trigger_type == "crossing" ? "root" : "step"))
+  terminate_simulation = Bool(get(event, "stopSimulation", false))
+
+  # Temporary backend limitation: stopSimulation is currently represented as a
+  # separate StopEvent and is supported only for step-detected conditional events.
+  if terminate_simulation
+    trigger_type == "conditional" && detection_type == "step" && return :stop
+    throw(ArgumentError(
+      "DynMS event $(event["id"]) has an argument `stopSimulation` set to true, which is currently supported only for " *
+      "trigger type 'conditional' with detection 'step'. Got type='$trigger_type', detection='$detection_type'."
+    ))
+  end
 
   trigger_type == "time" && return :time
-  trigger_type == "stop" && return :stop
-
-  detection_type = string(get(trigger, "detection", trigger_type == "crossing" ? "root" : "step"))
   trigger_type == "crossing" && detection_type == "root" && return :continuous
-  trigger_type == "conditional" && detection_type == "root" && return :continuous
   trigger_type == "conditional" && detection_type == "step" && return :discrete
 
   throw(ArgumentError("Unsupported DynMS event trigger type/detection combination: type='$trigger_type', detection='$detection_type'."))

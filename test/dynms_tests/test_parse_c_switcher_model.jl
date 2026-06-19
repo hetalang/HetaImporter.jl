@@ -1,7 +1,7 @@
 @testset "DynMS parser: continuous switcher" begin
   dynms_path = joinpath(@__DIR__, "..", "models", "dynms", "9-c-switcher", "dist", "dynms", "output.dynms.json")
-  platform = parse_dynms_platform(dynms_path)
-  model = platform.models[:nameless]
+  spec = parse_dynms_spec(dynms_path)
+  model = spec.models[:nameless]
 
   @test collect(keys(model.constants)) == [:k1]
   @test collect(keys(model.states)) == [:x1_amt_, :x2_amt_]

@@ -2,12 +2,11 @@
 """
     heta_version()
 
-Displays heta-compiler version
+Returns heta-compiler version
 
 """
 function heta_version()
-  run_build = run(ignorestatus(`$heta_exe_path -v`))
-  return run_build.exitcode
+  return chomp(read(`$heta_exe_path -v`, String))
 end
 
 """
@@ -21,8 +20,12 @@ Arguments:
 
 """
 function heta_help(command::Union{String, Nothing}=nothing)
+  if isnothing(command)
+    run_build = run(ignorestatus(`$heta_exe_path help`))
+  else
     run_build = run(ignorestatus(`$heta_exe_path help $command`))
-    return run_build.exitcode
+  end
+    return nothing
 end
 
 """
