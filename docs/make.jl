@@ -17,3 +17,9 @@ makedocs(
   remotes = nothing,
   checkdocs = :exports
 )
+
+deploydocs(
+  repo = "github.com/hetalang/HetaImporter.jl.git",
+  devbranch = "master",
+  push_preview = true
+)
