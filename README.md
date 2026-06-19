@@ -1,7 +1,7 @@
 # HetaImporter
 
 [![Build Status](https://github.com/hetalang/HetaImporter.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/hetalang/HetaImporter.jl/actions/workflows/CI.yml?query=branch%3Amaster)
-[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://hetalang.github.io/HetaImporter.jl/stable/)
+[![Documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://hetalang.github.io/HetaImporter.jl/dev/)
 
 HetaImporter.jl is a Julia package for importing [Heta](https://hetalang.github.io/) models into Julia. Internally HetaImporter uses [Heta-compiler](https://hetalang.github.io/hetacompiler/), a CLI tool that converts Systems Biology/QSP models written in the Heta modeling language into various formats suiatble for simulation, calibration, and analysis (e.g., SBML, SimBiology, mrgsolve, and Julia code).
 
