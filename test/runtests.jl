@@ -1,7 +1,22 @@
 using HetaImporter
 using Test
 
+const DYNMS_TEST_MODELS_DIR = joinpath(@__DIR__, "..", "models", "dynms")
+
+_dynms_model_dir(model_name::AbstractString) = joinpath(DYNMS_TEST_MODELS_DIR, model_name)
+
+function _build_dynms_json(model_name::AbstractString, build_dir::AbstractString)
+  return build_dynms_file(_dynms_model_dir(model_name); build_dir)
+end
+
+function _parse_fresh_dynms_spec(model_name::AbstractString)
+  return mktempdir() do build_dir
+    parse_dynms_spec(_build_dynms_json(model_name, build_dir))
+  end
+end
+
 @testset "HetaImporter.jl" begin
+
     @testset "Heta compiler CLI tests" begin
         @test heta_version() == HetaImporter.HETA_COMPILER_VERSION
     end

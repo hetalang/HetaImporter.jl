@@ -1,6 +1,5 @@
 @testset "DynMS parser: time switcher" begin
-  dynms_path = joinpath(@__DIR__, "..", "models", "dynms", "11-time-switcher", "dist", "dynms", "output.dynms.json")
-  spec = parse_dynms_spec(dynms_path)
+  spec = _parse_fresh_dynms_spec("11-time-switcher")
   model = spec.models[:nameless]
 
   @test collect(keys(model.constants)) == [:kabs, :kel, :sw2_start]
@@ -26,7 +25,7 @@
   @test sw1.start == 0.0
   @test sw1.period == 12.0
   @test sw1.stop == 60.0
-  @test sw1.initial_affect
+  @test !sw1.initial_affect
   @test !sw1.is_active
   @test collect(keys(sw1.state_affects)) == [:a0]
   @test sw1.state_affects[:a0] == :(a0 + 10.0)

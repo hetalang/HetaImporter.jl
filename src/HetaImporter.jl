@@ -31,7 +31,7 @@ include("parse_dynms.jl")
 include("dynms_julia_codegen.jl")
 
 export heta_version, heta_help, heta_init, heta_build
-export build_julia_file
+export build_dynms_file, build_julia_file
 export parse_dynms_spec, parse_dynms_model
 export write_dynms_julia 
 

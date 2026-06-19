@@ -1,5 +1,3 @@
-const DYNMS_TEST_MODELS_DIR = joinpath(@__DIR__, "..", "models", "dynms")
-
 struct TestParameterPartition{C}
   x::Tuple{Vector{Float64},C}
 end
@@ -33,7 +31,7 @@ function _include_generated_julia(julia_path::AbstractString)
 end
 
 function _build_generated_args(model_name::AbstractString, ir_format::Symbol)
-  heta_dir = joinpath(DYNMS_TEST_MODELS_DIR, model_name)
+  heta_dir = _dynms_model_dir(model_name)
   build_dir = mktempdir()
   julia_path = build_julia_file(heta_dir; ir_format, build_dir)
   return julia_path, _include_generated_julia(julia_path)

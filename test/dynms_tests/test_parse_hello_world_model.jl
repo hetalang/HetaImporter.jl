@@ -1,8 +1,7 @@
 @testset "DynMS parser: hello world" begin
-  dynms_path = joinpath(@__DIR__, "..", "models", "dynms", "0-hello-world", "dist", "dynms", "output.dynms.json")
-  spec = parse_dynms_spec(dynms_path)
+  spec = _parse_fresh_dynms_spec("0-hello-world")
 
-  @test spec.version == "0.11.1"
+  @test spec.version == HetaImporter.HETA_COMPILER_VERSION
   @test collect(keys(spec.models)) == [:mm]
 
   model = spec.models[:mm]

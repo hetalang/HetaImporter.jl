@@ -12,6 +12,7 @@ heta_build
 ## Julia File Generation
 
 ```@docs
+build_dynms_file
 build_julia_file
 write_dynms_julia
 ```

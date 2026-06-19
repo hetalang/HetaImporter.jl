@@ -5,6 +5,41 @@ const DYNMS_MODEL_DIR = "dynms"
 const DYNMS_MODEL_NAME = "output.dynms.json"
 
 """
+    build_dynms_file(heta_dir; build_dir, kwargs...)
+
+Build a Heta platform and write a DynMS JSON file to
+`joinpath(build_dir, DYNMS_MODEL_DIR, DYNMS_MODEL_NAME)`.
+
+The returned value is the generated DynMS JSON file path.
+
+Arguments:
+
+- `heta_dir` : path to a Heta source directory containing a platform declaration file
+- `build_dir` : directory path where generated files are written. Default is `joinpath(heta_dir, "dist")`
+- `spaceFilter` : filter for namespaces in the Heta model. Can be a string, a vector of symbols, or `nothing`. Default is `nothing`
+- kwargs : other arguments supported by `heta_build`
+
+"""
+function build_dynms_file(
+  heta_dir::AbstractString;
+  build_dir::AbstractString = joinpath(abspath(heta_dir), "dist"),
+  spaceFilter::Union{String,Vector{Symbol},Nothing} = nothing,
+  kwargs...
+)
+  build_dir = abspath(build_dir)
+  spaceFilter = _normalize_space_filter(spaceFilter)
+  dynms_path, export_format = get_model_path_and_export_format(build_dir, spaceFilter, Val(:dynms))
+
+  build_retcode = heta_build(heta_dir; dist_dir=build_dir, export_format, kwargs...)
+  build_retcode == 0 ||
+    error("heta_build failed while generating DynMS JSON with exit code $build_retcode.")
+  isfile(dynms_path) ||
+    error("heta_build did not generate DynMS JSON at '$dynms_path'.")
+
+  return dynms_path
+end
+
+"""
     build_julia_file(heta_dir; build_dir, ir_format=:julia, kwargs...)
 
 Build a Heta platform and write a Julia source file to

@@ -42,7 +42,12 @@ julia_path = build_julia_file(
 DynMS JSON can also be parsed directly:
 
 ```julia
-spec = parse_dynms_spec("path/to/output.dynms.json")
+dynms_path = build_dynms_file(
+  "path/to/heta/platform";
+  build_dir = "path/to/build"
+)
+
+spec = parse_dynms_spec(dynms_path)
 model = spec.models[:my_model]
 ```
 
