@@ -1,0 +1,25 @@
+{
+  "builderVersion": "*",
+  "id": "cs",
+  "title": "Condition switcher case",
+  "notes": "platform notes",
+  "version": "v0.1.0",
+  "license": "UNLICENSED",
+  "options": {
+    "unitsCheck": false
+  },
+  "importModule": {
+    "type": "heta",
+    "source": "src/index.heta"
+  },
+  "export": [
+    {"format": "SBML", "filepath": "sbml"},
+    {"format": "SLV", "filepath": "slv"},
+    {"format": "DBSolve", "filepath": "dbsolve"},
+    {"format": "Julia", "filepath": "julia"},
+    {"format": "Matlab", "filepath": "matlab"},
+    {"format": "Simbio", "filepath": "simbio"},
+    {"format": "Mrgsolve", "filepath": "mrgsolve"},
+    {"format": "DynMS", "filepath": "dynms"}
+  ]
+}

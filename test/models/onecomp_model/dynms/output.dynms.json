@@ -1,0 +1,221 @@
+{
+  "$schema": "https://raw.githubusercontent.com/hetalang/heta-compiler/master/src/dynms/dynms.schema.json",
+  "dynms": "0.1.0",
+  "generator": {
+    "name": "heta-compiler",
+    "version": "0.12.0"
+  },
+  "created": "2026-06-18T09:39:07.520Z",
+  "license": "UNLICENSED",
+  "models": [
+    {
+      "id": "nameless",
+      "constants": [
+        {
+          "id": "F",
+          "value": 0.97
+        },
+        {
+          "id": "dose",
+          "value": 10
+        },
+        {
+          "id": "kabs",
+          "value": 0.01
+        },
+        {
+          "id": "kel",
+          "value": 0.0012
+        },
+        {
+          "id": "time_start",
+          "value": 100
+        },
+        {
+          "id": "time_end",
+          "value": 100.1
+        },
+        {
+          "id": "time_inj",
+          "value": 0.1
+        },
+        {
+          "id": "dose_inj",
+          "value": 1
+        }
+      ],
+      "states": [
+        {
+          "id": "switch",
+          "initial": 0,
+          "static": true
+        },
+        {
+          "id": "gut",
+          "initial": 1,
+          "static": true
+        },
+        {
+          "id": "Vd",
+          "initial": 5,
+          "static": true
+        },
+        {
+          "id": "a0",
+          "initial": {
+            "expr": [
+              "Multiply",
+              "F",
+              "dose"
+            ],
+            "format": "math-json"
+          }
+        },
+        {
+          "id": "c1_amt_",
+          "initial": {
+            "expr": [
+              "Multiply",
+              0,
+              5
+            ],
+            "format": "math-json"
+          }
+        }
+      ],
+      "assignments": [
+        {
+          "id": "r_inj",
+          "rhs": {
+            "expr": [
+              "Divide",
+              [
+                "Multiply",
+                "switch",
+                "dose_inj"
+              ],
+              "time_inj"
+            ],
+            "format": "math-json"
+          }
+        },
+        {
+          "id": "r_abs",
+          "rhs": {
+            "expr": [
+              "Multiply",
+              "kabs",
+              "a0"
+            ],
+            "format": "math-json"
+          }
+        },
+        {
+          "id": "c1",
+          "rhs": {
+            "expr": [
+              "Divide",
+              "c1_amt_",
+              "Vd"
+            ],
+            "format": "math-json"
+          }
+        },
+        {
+          "id": "r_el",
+          "rhs": {
+            "expr": [
+              "Multiply",
+              "kel",
+              "c1",
+              "Vd"
+            ],
+            "format": "math-json"
+          }
+        }
+      ],
+      "derivatives": [
+        {
+          "state": "a0",
+          "rhs": {
+            "expr": [
+              "Add",
+              "r_inj",
+              [
+                "Negate",
+                "r_abs"
+              ]
+            ],
+            "format": "math-json"
+          }
+        },
+        {
+          "state": "c1_amt_",
+          "rhs": {
+            "expr": [
+              "Add",
+              "r_abs",
+              [
+                "Negate",
+                "r_el"
+              ]
+            ],
+            "format": "math-json"
+          }
+        }
+      ],
+      "events": [
+        {
+          "id": "sw",
+          "trigger": {
+            "type": "time",
+            "start": {
+              "expr": "time_start",
+              "format": "math-json"
+            }
+          },
+          "priority": 0,
+          "actions": [
+            {
+              "rhs": {
+                "expr": 1,
+                "format": "math-json"
+              },
+              "state": "switch"
+            }
+          ],
+          "active": false
+        },
+        {
+          "id": "sw_end",
+          "trigger": {
+            "type": "time",
+            "start": {
+              "expr": "time_end",
+              "format": "math-json"
+            }
+          },
+          "priority": 0,
+          "actions": [
+            {
+              "rhs": {
+                "expr": 0,
+                "format": "math-json"
+              },
+              "state": "switch"
+            }
+          ],
+          "active": false
+        }
+      ],
+      "observables": [
+        {
+          "symbol": "a0"
+        },
+        {
+          "symbol": "c1"
+        }
+      ]
+    }
+  ]
+}

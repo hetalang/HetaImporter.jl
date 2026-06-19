@@ -2,12 +2,11 @@
 """
     heta_version()
 
-Displays heta-compiler version
+Returns heta-compiler version
 
 """
 function heta_version()
-  run_build = run(ignorestatus(`$heta_exe_path -v`))
-  return run_build.exitcode
+  return chomp(read(`$heta_exe_path -v`, String))
 end
 
 """
@@ -21,8 +20,12 @@ Arguments:
 
 """
 function heta_help(command::Union{String, Nothing}=nothing)
+  if isnothing(command)
+    run_build = run(ignorestatus(`$heta_exe_path help`))
+  else
     run_build = run(ignorestatus(`$heta_exe_path help $command`))
-    return run_build.exitcode
+  end
+    return nothing
 end
 
 """
@@ -83,7 +86,7 @@ Arguments:
 - `meta_dir` : meta directory path. Default is `"meta"`
 - `source` : path to the main heta module. Default is `"index.heta"`
 - `type` : type of the source file. Default is `"heta"`
-- `export_format` : export the model to the specified format: `Julia,JSON`, `{format:SBML,version:L3V1},JSON`
+- `export_format` : export the model to the specified format: `julia,dynms`,`{format:SBML,version:L3V1}`
 """
 function heta_build(
   target_dir::AbstractString;
