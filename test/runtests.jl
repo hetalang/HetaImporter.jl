@@ -1,7 +1,7 @@
 using HetaImporter
 using Test
 
-const DYNMS_TEST_MODELS_DIR = joinpath(@__DIR__, "..", "models", "dynms")
+const DYNMS_TEST_MODELS_DIR = joinpath(@__DIR__, "models", "dynms")
 
 _dynms_model_dir(model_name::AbstractString) = joinpath(DYNMS_TEST_MODELS_DIR, model_name)
 

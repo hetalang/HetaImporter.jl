@@ -87,8 +87,10 @@ function _build_julia_file(
   model_path, export_format = get_model_path_and_export_format(build_dir, spaceFilter, Val(ir_format))
 
   build_retcode = heta_build(heta_dir; dist_dir=build_dir, export_format, kwargs...)
-  build_retcode == 1 &&
-    throw("Compilation errors. Likely there is an error in the Heta model. Please check the log file for details.")
+  build_retcode == 0 ||
+    error("heta_build failed while generating $ir_format model from '$heta_dir' with exit code $build_retcode.")
+  isfile(model_path) ||
+    error("heta_build did not generate $ir_format model at '$model_path'.")
 
   _write_julia_file(model_path, julia_path, Val(ir_format))
   return julia_path
