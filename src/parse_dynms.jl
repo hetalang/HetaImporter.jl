@@ -1,4 +1,5 @@
-const DYNMS_VERSION = "0.1.0"
+const DYNMS_VERSION = "0.2.0"
+const DYNMS_SUPPORTED_VERSIONS = (DYNMS_VERSION,)
 
 const DynMSExpr = Union{Expr,Symbol,Float64,Bool}
 const DynMSVal = Union{Symbol, Float64}
@@ -100,8 +101,8 @@ end
 
 function parse_dynms_spec(data::AbstractDict)
   dynms_version = string(get(data, "dynms", DYNMS_VERSION))
-  dynms_version == DYNMS_VERSION ||
-    throw(ArgumentError("Unsupported DynMS format version: $dynms_version. Supported version is: $DYNMS_VERSION"))
+  dynms_version in DYNMS_SUPPORTED_VERSIONS ||
+    throw(ArgumentError("Unsupported DynMS format version: $dynms_version. Supported versions are: $(join(DYNMS_SUPPORTED_VERSIONS, ", "))"))
 
   dynms_models = OrderedDict{Symbol,DynMSModelDef}()
   for model in get(data, "models", Any[])
@@ -133,7 +134,7 @@ parse_dynms_model(model::AbstractDict) = _parse_dynms_model(model)
 
 function isempty_dynms_model(model::AbstractDict)
   return all(isempty(get(model, key, Any[])) for key in (
-    "constants", "states", "assignments", "derivatives"
+    "constants", "dynamic", "static", "assignments", "timeEvents", "events"
   ))
 end
 
@@ -171,10 +172,25 @@ function _parse_dynms_constants(model::AbstractDict)
   return constants
 end
 
+function _dynms_dynamic_defs(model::AbstractDict)
+  return get(model, "dynamic", Any[])
+end
+
+function _dynms_static_defs(model::AbstractDict)
+  return get(model, "static", Any[])
+end
+
+function _dynms_time_event_defs(model::AbstractDict)
+  return get(model, "timeEvents", Any[])
+end
+
+function _dynms_event_defs(model::AbstractDict)
+  return get(model, "events", Any[])
+end
+
 function _parse_dynms_statics(model::AbstractDict)
   statics = OrderedDict{Symbol,DynMSExpr}()
-  for state in get(model, "states", Any[])
-    Bool(get(state, "static", false)) || continue
+  for state in _dynms_static_defs(model)
     id = Symbol(string(state["id"]))
     statics[id] = _parse_dynms_expr(get(state, "initial", 0.0))
   end
@@ -191,21 +207,16 @@ function _parse_dynms_assignments(model::AbstractDict)
 end
 
 function _parse_dynms_states(model::AbstractDict)
-  derivatives = Dict{String,DynMSExpr}()
-  for derivative in get(model, "derivatives", Any[])
-    derivatives[string(derivative["state"])] = _parse_dynms_expr(derivative["rhs"])
-  end
-
   states = OrderedDict{Symbol,DynMSStateDef}()
-  for state in get(model, "states", Any[])
-    Bool(get(state, "static", false)) && continue
-
+  for state in _dynms_dynamic_defs(model)
     id = string(state["id"])
-    equation = get(derivatives, id, 0.0)
+    haskey(state, "derivative") ||
+      throw(ArgumentError("DynMS dynamic state '$id' does not include a derivative."))
+
     states[Symbol(id)] = DynMSStateDef(
       _parse_dynms_expr(get(state, "initial", 0.0)),
-      equation,
-      !haskey(derivatives, id)
+      _parse_dynms_expr(state["derivative"]),
+      Bool(get(state, "algebraic", false))
     )
   end
   return states
@@ -213,8 +224,7 @@ end
 
 function _parse_dynms_time_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSTimeEventDef}()
-  for event in get(model, "events", Any[])
-    _dynms_event_kind(event) == :time || continue
+  for event in _dynms_time_event_defs(model)
     parsed = _parse_dynms_time_event(model, event)
     events[parsed.id] = parsed
   end
@@ -223,7 +233,7 @@ end
 
 function _parse_dynms_continuous_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSContinuousEventDef}()
-  for event in get(model, "events", Any[])
+  for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :continuous || continue
     parsed = _parse_dynms_continuous_event(model, event)
     events[parsed.id] = parsed
@@ -233,7 +243,7 @@ end
 
 function _parse_dynms_discrete_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSDiscreteEventDef}()
-  for event in get(model, "events", Any[])
+  for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :discrete || continue
     parsed = _parse_dynms_discrete_event(model, event)
     events[parsed.id] = parsed
@@ -243,7 +253,7 @@ end
 
 function _parse_dynms_stop_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSStopEventDef}()
-  for event in get(model, "events", Any[])
+  for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :stop || continue
     parsed = _parse_dynms_stop_event(event)
     events[parsed.id] = parsed
@@ -304,8 +314,8 @@ function _parse_dynms_stop_event(event)
 end
 
 function _parse_dynms_event_affects(model::AbstractDict, event)
-  dynamic_state_ids = Set(string(state["id"]) for state in get(model, "states", Any[]) if !Bool(get(state, "static", false)))
-  static_state_ids = Set(string(state["id"]) for state in get(model, "states", Any[]) if Bool(get(state, "static", false)))
+  dynamic_state_ids = Set(string(state["id"]) for state in _dynms_dynamic_defs(model))
+  static_state_ids = Set(string(state["id"]) for state in _dynms_static_defs(model))
   state_affects = OrderedDict{Symbol,DynMSExpr}()
   discrete_affects = OrderedDict{Symbol,DynMSExpr}()
 
@@ -329,7 +339,13 @@ end
 function _dynms_event_kind(event)
   trigger = event["trigger"]
   trigger_type = string(trigger["type"])
-  detection_type = string(get(trigger, "detection", trigger_type == "crossing" ? "root" : "step"))
+
+  trigger_type == "time" && return :time
+
+  haskey(trigger, "detection") ||
+    throw(ArgumentError("DynMS event $(event["id"]) has trigger type '$trigger_type' but does not include an explicit detection type."))
+
+  detection_type = string(trigger["detection"])
   terminate_simulation = Bool(get(event, "stopSimulation", false))
 
   # Temporary backend limitation: stopSimulation is currently represented as a
@@ -342,7 +358,6 @@ function _dynms_event_kind(event)
     ))
   end
 
-  trigger_type == "time" && return :time
   trigger_type == "crossing" && detection_type == "root" && return :continuous
   trigger_type == "conditional" && detection_type == "step" && return :discrete
 
