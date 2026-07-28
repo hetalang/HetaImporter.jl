@@ -11,7 +11,9 @@ import Base: SHA1
 RuntimeGeneratedFunctions.init(@__MODULE__)
 
 # heta-compiler supported version
-const HETA_COMPILER_VERSION = "0.12.0"
+const HETA_COMPILER_VERSION = "0.12.1"
+const DYNMS_VERSION = "0.2.0"
+const DYNMS_SUPPORTED_VERSIONS = (DYNMS_VERSION,)
 
 function heta_compiler_load()
     artifact_info = artifact_meta("heta_app", joinpath(@__DIR__, "..", "Artifacts.toml"))

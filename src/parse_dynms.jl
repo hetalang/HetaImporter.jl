@@ -1,6 +1,3 @@
-const DYNMS_VERSION = "0.2.0"
-const DYNMS_SUPPORTED_VERSIONS = (DYNMS_VERSION,)
-
 const DynMSExpr = Union{Expr,Symbol,Float64,Bool}
 const DynMSVal = Union{Symbol, Float64}
 
