@@ -5,22 +5,32 @@ authors = ["Evgeny Metelkin metelkin@insysbio.com", "Ivan Borisov borisov@insysb
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+DiffEqCallbacks = "459566f4-90b8-5000-8ac3-15dfb0a30def"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MathJSON = "77215b4b-6f01-425c-beac-950ae6536d4d"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 RuntimeGeneratedFunctions = "7e49a35a-f44a-4d26-94aa-eba1b4ca6b47"
+SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
+SciMLStructures = "53ae85a6-f571-4167-b2af-e1d143709226"
+SymbolicIndexingInterface = "2efcf032-c050-4f8e-a9bb-153293bab1f5"
 
 [compat]
 DataStructures = "0.18.0, 0.19.4"
+DiffEqCallbacks = "4"
 JSON = "1.6.0"
 LinearAlgebra = "1"
 MathJSON = "0.3.0"
+OrdinaryDiffEqTsit5 = "2"
 RuntimeGeneratedFunctions = "0.5.16, 0.5.17"
+SciMLBase = "3.49.2"
+SciMLStructures = "1.10.5"
+SymbolicIndexingInterface = "0.3.53"
 julia = "1.10"
 
 [extras]
+OrdinaryDiffEqTsit5 = "b1df2697-797e-41e3-8120-5422d3b24e4a"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Test", "OrdinaryDiffEqTsit5"]

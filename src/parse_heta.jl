@@ -1,17 +1,17 @@
 const DynMSExpr = Union{Expr,Symbol,Float64,Bool}
 const DynMSVal = Union{Symbol, Float64}
 
-abstract type AbstractDynMSEventDef end
+abstract type AbstractDynMSEvent end
 
-struct DynMSStateDef
+struct DynMSState
   initial::DynMSExpr
   equation::DynMSExpr
   is_algebraic::Bool
 end
 
-is_algebraic(state::DynMSStateDef) = state.is_algebraic
+is_algebraic(state::DynMSState) = state.is_algebraic
 
-struct DynMSTimeEventDef <: AbstractDynMSEventDef
+struct DynMSTimeEvent <: AbstractDynMSEvent
   id::Symbol
   start::DynMSVal
   period::Union{DynMSVal, Nothing}
@@ -22,7 +22,7 @@ struct DynMSTimeEventDef <: AbstractDynMSEventDef
   is_active::Bool
 end
 
-struct DynMSContinuousEventDef <: AbstractDynMSEventDef
+struct DynMSContinuousEvent <: AbstractDynMSEvent
   id::Symbol
   condition::Union{Expr,Symbol}
   state_affects::OrderedDict{Symbol,DynMSExpr}
@@ -31,7 +31,7 @@ struct DynMSContinuousEventDef <: AbstractDynMSEventDef
   is_active::Bool
 end
 
-struct DynMSDiscreteEventDef <: AbstractDynMSEventDef
+struct DynMSDiscreteEvent <: AbstractDynMSEvent
   id::Symbol  
   condition::Union{Expr,Symbol}
   state_affects::OrderedDict{Symbol,DynMSExpr}
@@ -40,39 +40,44 @@ struct DynMSDiscreteEventDef <: AbstractDynMSEventDef
   is_active::Bool
 end
 
-struct DynMSStopEventDef <: AbstractDynMSEventDef
+struct DynMSStopEvent <: AbstractDynMSEvent
   id::Symbol
   condition::Union{Expr,Symbol}
   initial_affect::Bool
   is_active::Bool
 end
 
-event_id(event::AbstractDynMSEventDef) = event.id
-is_active(event::AbstractDynMSEventDef) = event.is_active
-has_initial_affect(event::AbstractDynMSEventDef) = event.initial_affect
+event_id(event::AbstractDynMSEvent) = event.id
+is_active(event::AbstractDynMSEvent) = event.is_active
+has_initial_affect(event::AbstractDynMSEvent) = event.initial_affect
+
+struct DynMSParameters
+  tunable::OrderedDict{Symbol,Float64}
+  discrete::OrderedDict{Symbol,DynMSExpr}
+end
 
 # Internal DynMS IR boundary:
-# JSON parsing should stop here. Julia source generation, future ODEProblem
-# construction, and future ModelingToolkit system construction should be
-# adapters over this parsed DynMSModelDef/DynMSSpec plus generated
-# DynMSJuliaFunction objects.
-struct DynMSModelDef
+# JSON parsing should stop here. Julia source generation and ODEProblem
+# construction should be adapters over this parsed DynMSModel/DynMSModelSet
+# plus generated DynMSJuliaFunction objects.
+struct DynMSModel
   id::Symbol
-  constants::OrderedDict{Symbol,Float64} # consider using parameters term in the future
-  statics::OrderedDict{Symbol,DynMSExpr} # consider using discrete_parameters (? and dependent_parameters) term in the future
+  parameters::DynMSParameters
   assignment_rules::OrderedDict{Symbol,DynMSExpr}
-  states::OrderedDict{Symbol,DynMSStateDef}
-  time_events::OrderedDict{Symbol,DynMSTimeEventDef}
-  continuous_events::OrderedDict{Symbol,DynMSContinuousEventDef}
-  discrete_events::OrderedDict{Symbol,DynMSDiscreteEventDef}
-  stop_events::OrderedDict{Symbol,DynMSStopEventDef}
+  states::OrderedDict{Symbol,DynMSState}
+  time_events::OrderedDict{Symbol,DynMSTimeEvent}
+  continuous_events::OrderedDict{Symbol,DynMSContinuousEvent}
+  discrete_events::OrderedDict{Symbol,DynMSDiscreteEvent}
+  stop_events::OrderedDict{Symbol,DynMSStopEvent}
   observables::Vector{Symbol}
 end
 
-merge_events(model::DynMSModelDef) = merge(model.time_events, model.continuous_events, model.discrete_events, model.stop_events)
+has_algebraic(model::DynMSModel) = any(is_algebraic, values(model.states))
 
-struct DynMSSpec
-  models::OrderedDict{Symbol,DynMSModelDef}
+merge_events(model::DynMSModel) = merge(model.time_events, model.continuous_events, model.discrete_events, model.stop_events)
+
+struct DynMSModelSet
+  models::OrderedDict{Symbol,DynMSModel}
   version::String
 end
 
@@ -82,26 +87,82 @@ struct DynMSJuliaFunction
   body::Expr
 end
 
-"""
-    parse_dynms_spec(dynms_json::AbstractString)
-    parse_dynms_spec(data::AbstractDict)
+struct DynMSJuliaTimeEventCode
+  id::Symbol
+  schedule_func::DynMSJuliaFunction
+  affect_func::DynMSJuliaFunction
+  initial_affect::Bool
+end
 
-Parse a DynMS JSON file or already-loaded JSON dictionary into a `DynMSSpec`.
+struct DynMSJuliaConditionalEventCode
+  id::Symbol
+  condition_func::DynMSJuliaFunction
+  affect_func::DynMSJuliaFunction
+  initial_affect::Bool
+end
+
+struct DynMSJuliaStopEventCode
+  id::Symbol
+  condition_func::DynMSJuliaFunction
+  initial_affect::Bool
+end
+
+function _dynms_function_source(io::IO, func::DynMSJuliaFunction)
+  println(io, "function $(func.name)($(join(func.args, ", ")))")
+  for stmt in func.body.args
+    _dynms_statement_source(io, stmt, 2)
+  end
+  println(io, "end")
+  println(io)
+  return nothing
+end
+
+function _dynms_statement_source(io::IO, stmt, indent::Int)
+  stmt isa LineNumberNode && return nothing
+  stmt_string = _dynms_expr_source(stmt)
+  prefix = " "^indent
+  for line in split(stmt_string, '\n')
+    println(io, prefix, line)
+  end
+  return nothing
+end
+
+function _dynms_expr_source(ex)
+  clean_ex = Base.remove_linenums!(deepcopy(ex))
+  return sprint(io -> Base.show_unquoted(io, clean_ex, 0, 0))
+end
+
+"""
+    parse_heta(heta_dir; build_dir, kwargs...)
+
+Parse Heta models into a `DynMSModelSet`.
+Additional keyword arguments are forwarded to [`build_dynms_file`](@ref).
+"""
+function parse_heta(heta_dir::AbstractString; kwargs...)
+  dynms_path = build_dynms_file(heta_dir; kwargs...)
+  return parse_dynms(dynms_path)
+end
+
+"""
+    parse_dynms(dynms_json::AbstractString)
+    parse_dynms(data::AbstractDict)
+
+Parse a DynMS JSON file or already-loaded JSON dictionary into a `DynMSModelSet`.
 
 The returned specification contains parsed model definitions, Julia expression
 trees for mathematical expressions, event definitions, and metadata from the
 DynMS generator.
 """
-function parse_dynms_spec(dynms_json::AbstractString)
-  return parse_dynms_spec(JSON.parsefile(dynms_json))
+function parse_dynms(dynms_json::AbstractString)
+  return parse_dynms(JSON.parsefile(dynms_json))
 end
 
-function parse_dynms_spec(data::AbstractDict)
+function parse_dynms(data::AbstractDict)
   dynms_version = string(get(data, "dynms", DYNMS_VERSION))
   dynms_version in DYNMS_SUPPORTED_VERSIONS ||
     throw(ArgumentError("Unsupported DynMS format version: $dynms_version. Supported versions are: $(join(DYNMS_SUPPORTED_VERSIONS, ", "))"))
 
-  dynms_models = OrderedDict{Symbol,DynMSModelDef}()
+  dynms_models = OrderedDict{Symbol,DynMSModel}()
   for model in get(data, "models", Any[])
     isempty_dynms_model(model) && continue
     dynms_model = parse_dynms_model(model)
@@ -116,16 +177,16 @@ function parse_dynms_spec(data::AbstractDict)
     throw(ArgumentError("DynMS JSON does not include heta-compiler version. 
     This likely means that the JSON was not generated by heta-compiler version compatible with HetaImporter."))
 
-  return DynMSSpec(dynms_models, heta_compiler_version)
+  return DynMSModelSet(dynms_models, heta_compiler_version)
 end
 
 """
     parse_dynms_model(model::AbstractDict)
 
-Parse one DynMS model dictionary into a `DynMSModelDef`.
+Parse one DynMS model dictionary into a `DynMSModel`.
 
 This is mainly useful when working with a model entry extracted from a DynMS
-document. For normal use, prefer [`parse_dynms_spec`](@ref).
+document. For normal use, prefer [`parse_dynms`](@ref).
 """
 parse_dynms_model(model::AbstractDict) = _parse_dynms_model(model)
 
@@ -137,8 +198,7 @@ end
 
 function _parse_dynms_model(model::AbstractDict)
 
-  constants = _parse_dynms_constants(model)
-  statics = _parse_dynms_statics(model)
+  parameters = _parse_dynms_parameters(model)
   assignment_rules = _parse_dynms_assignments(model)
   states = _parse_dynms_states(model)
   time_events = _parse_dynms_time_events(model)
@@ -147,10 +207,9 @@ function _parse_dynms_model(model::AbstractDict)
   stop_events = _parse_dynms_stop_events(model)
   observables = _parse_dynms_observables(model)
 
-  return DynMSModelDef(
+  return DynMSModel(
     Symbol(model["id"]),
-    constants,
-    statics,
+    parameters,
     assignment_rules,
     states,
     time_events,
@@ -161,12 +220,19 @@ function _parse_dynms_model(model::AbstractDict)
   )
 end
 
-function _parse_dynms_constants(model::AbstractDict)
-  constants = OrderedDict{Symbol,Float64}()
+function _parse_dynms_parameters(model::AbstractDict)
+  return DynMSParameters(
+    _parse_dynms_tunable(model),
+    _parse_dynms_discrete(model)
+  )
+end
+
+function _parse_dynms_tunable(model::AbstractDict)
+  tunable = OrderedDict{Symbol,Float64}()
   for constant in get(model, "constants", Any[])
-    constants[Symbol(string(constant["id"]))] = Float64(constant["value"])
+    tunable[Symbol(string(constant["id"]))] = Float64(constant["value"])
   end
-  return constants
+  return tunable
 end
 
 function _dynms_dynamic_defs(model::AbstractDict)
@@ -185,13 +251,13 @@ function _dynms_event_defs(model::AbstractDict)
   return get(model, "events", Any[])
 end
 
-function _parse_dynms_statics(model::AbstractDict)
-  statics = OrderedDict{Symbol,DynMSExpr}()
+function _parse_dynms_discrete(model::AbstractDict)
+  discrete = OrderedDict{Symbol,DynMSExpr}()
   for state in _dynms_static_defs(model)
     id = Symbol(string(state["id"]))
-    statics[id] = _parse_dynms_expr(get(state, "initial", 0.0))
+    discrete[id] = _parse_dynms_expr(get(state, "initial", 0.0))
   end
-  return statics
+  return discrete
 end
 
 function _parse_dynms_assignments(model::AbstractDict)
@@ -204,13 +270,13 @@ function _parse_dynms_assignments(model::AbstractDict)
 end
 
 function _parse_dynms_states(model::AbstractDict)
-  states = OrderedDict{Symbol,DynMSStateDef}()
+  states = OrderedDict{Symbol,DynMSState}()
   for state in _dynms_dynamic_defs(model)
     id = string(state["id"])
     haskey(state, "derivative") ||
       throw(ArgumentError("DynMS dynamic state '$id' does not include a derivative."))
 
-    states[Symbol(id)] = DynMSStateDef(
+    states[Symbol(id)] = DynMSState(
       _parse_dynms_expr(get(state, "initial", 0.0)),
       _parse_dynms_expr(state["derivative"]),
       Bool(get(state, "algebraic", false))
@@ -220,7 +286,7 @@ function _parse_dynms_states(model::AbstractDict)
 end
 
 function _parse_dynms_time_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSTimeEventDef}()
+  events = OrderedDict{Symbol,DynMSTimeEvent}()
   for event in _dynms_time_event_defs(model)
     parsed = _parse_dynms_time_event(model, event)
     events[parsed.id] = parsed
@@ -229,7 +295,7 @@ function _parse_dynms_time_events(model::AbstractDict)
 end
 
 function _parse_dynms_continuous_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSContinuousEventDef}()
+  events = OrderedDict{Symbol,DynMSContinuousEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :continuous || continue
     parsed = _parse_dynms_continuous_event(model, event)
@@ -239,7 +305,7 @@ function _parse_dynms_continuous_events(model::AbstractDict)
 end
 
 function _parse_dynms_discrete_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSDiscreteEventDef}()
+  events = OrderedDict{Symbol,DynMSDiscreteEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :discrete || continue
     parsed = _parse_dynms_discrete_event(model, event)
@@ -249,7 +315,7 @@ function _parse_dynms_discrete_events(model::AbstractDict)
 end
 
 function _parse_dynms_stop_events(model::AbstractDict)
-  events = OrderedDict{Symbol,DynMSStopEventDef}()
+  events = OrderedDict{Symbol,DynMSStopEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :stop || continue
     parsed = _parse_dynms_stop_event(event)
@@ -265,7 +331,7 @@ end
 function _parse_dynms_time_event(model::AbstractDict, event)
   trigger = event["trigger"]
   state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
-  return DynMSTimeEventDef(
+  return DynMSTimeEvent(
     Symbol(string(event["id"])),
     _parse_dynms_value(get(trigger, "start", 0.0)),
     _parse_dynms_optional_value(get(trigger, "period", nothing)),
@@ -279,7 +345,7 @@ end
 
 function _parse_dynms_continuous_event(model::AbstractDict, event)
   state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
-  return DynMSContinuousEventDef(
+  return DynMSContinuousEvent(
     Symbol(string(event["id"])),
     _parse_dynms_condition(event["trigger"]["rhs"]),
     state_affects,
@@ -291,7 +357,7 @@ end
 
 function _parse_dynms_discrete_event(model::AbstractDict, event)
   state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
-  return DynMSDiscreteEventDef(
+  return DynMSDiscreteEvent(
     Symbol(string(event["id"])),
     _parse_dynms_condition(event["trigger"]["rhs"]),
     state_affects,
@@ -302,7 +368,7 @@ function _parse_dynms_discrete_event(model::AbstractDict, event)
 end
 
 function _parse_dynms_stop_event(event)
-  return DynMSStopEventDef(
+  return DynMSStopEvent(
     Symbol(string(event["id"])),
     _parse_dynms_condition(event["trigger"]["rhs"]),
     Bool(get(event["trigger"], "atStart", false)),
@@ -312,7 +378,7 @@ end
 
 function _parse_dynms_event_affects(model::AbstractDict, event)
   dynamic_state_ids = Set(string(state["id"]) for state in _dynms_dynamic_defs(model))
-  static_state_ids = Set(string(state["id"]) for state in _dynms_static_defs(model))
+  discrete_ids = Set(string(state["id"]) for state in _dynms_static_defs(model))
   state_affects = OrderedDict{Symbol,DynMSExpr}()
   discrete_affects = OrderedDict{Symbol,DynMSExpr}()
 
@@ -323,7 +389,7 @@ function _parse_dynms_event_affects(model::AbstractDict, event)
 
     if state_id in dynamic_state_ids
       state_affects[target] = rhs
-    elseif state_id in static_state_ids
+    elseif state_id in discrete_ids
       discrete_affects[target] = rhs
     else
       throw(ArgumentError("DynMS event $(event["id"]) updates unknown state '$state_id'."))
@@ -478,13 +544,22 @@ function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any})
   operator == :Ln && return :(log($(only(args))))
   operator == :Log && return length(args) == 1 ? :(log($(only(args)))) : :(log($(args[2]), $(args[1])))
   operator == :Log10 && return :(log10($(only(args))))
+  operator == :Lg && return :(log10($(only(args))))
+  operator == :Lb && return :(log2($(only(args))))
+  operator == :Log2 && return :(log2($(only(args))))
 
   operator == :Sin && return :(sin($(only(args))))
   operator == :Cos && return :(cos($(only(args))))
   operator == :Tan && return :(tan($(only(args))))
+  operator == :Cot && return :(cot($(only(args))))
+  operator == :Sec && return :(sec($(only(args))))
+  operator == :Csc && return :(csc($(only(args))))
   operator == :Arcsin && return :(asin($(only(args))))
   operator == :Arccos && return :(acos($(only(args))))
   operator == :Arctan && return Expr(:call, :atan, args...)
+  operator == :Arccot && return :(acot($(only(args))))
+  operator == :Arcsec && return :(asec($(only(args))))
+  operator == :Arccsc && return :(acsc($(only(args))))
 
   operator == :Min && return Expr(:call, :min, args...)
   operator == :Max && return Expr(:call, :max, args...)
@@ -492,6 +567,10 @@ function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any})
   operator == :Ceil && return :(ceil($(only(args))))
   operator == :Round && return :(round($(only(args))))
   operator == :Mod && return :(mod($(args[1]), $(args[2])))
+  operator == :Sign && return :(sign($(only(args))))
+  operator == :Square && return :($(only(args)) ^ 2)
+  operator == :Root && return length(args) == 1 ? :(sqrt($(only(args)))) : :($(args[1]) ^ (1 / $(args[2])))
+  operator == :Factorial && return :(factorial(round(Int, $(only(args)))))
 
   operator == :Less && return _dynms_pairwise_comparison(Symbol("<"), args)
   operator == :LessEqual && return _dynms_pairwise_comparison(Symbol("<="), args)
@@ -505,8 +584,21 @@ function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any})
   operator == :Xor && return isempty(args) ? false : Expr(:call, :xor, args...)
 
   operator == :If && return :($(args[1]) ? $(args[2]) : $(args[3]))
+  operator == :Which && return _dynms_which(args)
 
   throw(ArgumentError("Unsupported DynMS MathJSON operator '$operator'."))
+end
+
+function _dynms_which(args::Vector{Any})
+  isempty(args) && throw(ArgumentError("Which requires at least one argument."))
+  n = length(args)
+  has_default = isodd(n)
+  expr = has_default ? args[end] : :(throw(ArgumentError("No matching Which branch and no default value provided.")))
+  pairs_n = has_default ? n - 1 : n
+  for i in (pairs_n - 1):-2:1
+    expr = :($(args[i]) ? $(args[i + 1]) : $expr)
+  end
+  return expr
 end
 
 function _dynms_call(op::Symbol, args::Vector{Any}; empty=nothing)

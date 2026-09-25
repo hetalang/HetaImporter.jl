@@ -1,10 +1,10 @@
 @testset "DynMS parser: time switcher" begin
-  spec = _parse_fresh_dynms_spec("11-time-switcher")
+  spec = _parse_fresh_heta("11-time-switcher")
   model = spec.models[:nameless]
 
-  @test collect(keys(model.constants)) == [:kabs, :kel, :sw2_start]
+  @test collect(keys(model.parameters.tunable)) == [:kabs, :kel, :sw2_start]
   @test collect(keys(model.states)) == [:a0, :s1_amt_]
-  @test collect(keys(model.statics)) == [:s2_amt_, :comp0, :comp1]
+  @test collect(keys(model.parameters.discrete)) == [:s2_amt_, :comp0, :comp1]
   @test model.observables == [:s1, :s2, :comp0, :comp1]
 
   @test collect(keys(model.time_events)) == [:sw0, :sw1, :sw2]

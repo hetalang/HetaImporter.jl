@@ -1,27 +1,6 @@
-
-struct DynMSJuliaTimeEventCode
-  id::Symbol
-  tstops_func::DynMSJuliaFunction
-  affect_func::DynMSJuliaFunction
-  initial_affect::Bool
-end
-
-struct DynMSJuliaConditionalEventCode
-  id::Symbol
-  condition_func::DynMSJuliaFunction
-  affect_func::DynMSJuliaFunction
-  initial_affect::Bool
-end
-
-struct DynMSJuliaStopEventCode
-  id::Symbol
-  condition_func::DynMSJuliaFunction
-  initial_affect::Bool
-end
-
 struct DynMSJuliaSavingGeneratorCode
   name::Symbol
-  dynms::DynMSModelDef
+  dynms::DynMSModel
   output_ids::Vector{Symbol}
 end
 
@@ -47,8 +26,8 @@ struct DynMSJuliaSpecCode
 end
 
 
-# Convert DynMSSpec to the generated function definitions used by backends.
-function _dynms_spec_code(dynms::DynMSSpec)
+# Convert DynMSModelSet to the generated function definitions used by backends.
+function _dynms_spec_code(dynms::DynMSModelSet)
   model_codes = OrderedDict{Symbol,DynMSJuliaModelCode}()
   for model in values(dynms.models)
     model_codes[model.id] = _dynms_model_code(model)
@@ -56,9 +35,9 @@ function _dynms_spec_code(dynms::DynMSSpec)
   return DynMSJuliaSpecCode(model_codes, dynms.version)
 end
 
-function _dynms_model_code(dynms::DynMSModelDef)
-  constants_num = NamedTuple(dynms.constants)
-  statics_id = Tuple(keys(dynms.statics))
+function _dynms_model_code(dynms::DynMSModel)
+  constants_num = NamedTuple(dynms.parameters.tunable)
+  statics_id = Tuple(keys(dynms.parameters.discrete))
   output_ids = _dynms_output_ids(dynms)
   record_ids = _dynms_record_ids(dynms, output_ids)
   default_observables = Set(dynms.observables)
@@ -83,15 +62,15 @@ function _dynms_model_code(dynms::DynMSModelDef)
   )
 end
 
-function _dynms_output_ids(dynms::DynMSModelDef)
+function _dynms_output_ids(dynms::DynMSModel)
   ids = Symbol[]
-  append!(ids, keys(dynms.statics))
+  append!(ids, keys(dynms.parameters.discrete))
   append!(ids, keys(dynms.assignment_rules))
   append!(ids, keys(dynms.states))
   return unique(ids)
 end
 
-function _dynms_record_ids(dynms::DynMSModelDef, output_ids::Vector{Symbol})
+function _dynms_record_ids(dynms::DynMSModel, output_ids::Vector{Symbol})
   missing_observables = setdiff(dynms.observables, output_ids)
   isempty(missing_observables) ||
     throw(ArgumentError("DynMS observables must refer to statics, assignment rules, or states. Unknown observables: $(missing_observables)"))
@@ -102,7 +81,7 @@ function _dynms_record_ids(dynms::DynMSModelDef, output_ids::Vector{Symbol})
   return unique(ids)
 end
 
-function _dynms_time_event_codes(dynms::DynMSModelDef)
+function _dynms_time_event_codes(dynms::DynMSModel)
   event_codes = OrderedDict{Symbol,DynMSJuliaTimeEventCode}()
   for (id, event) in dynms.time_events
     event_codes[id] = DynMSJuliaTimeEventCode(
@@ -115,7 +94,7 @@ function _dynms_time_event_codes(dynms::DynMSModelDef)
   return event_codes
 end
 
-function _dynms_continuous_event_codes(dynms::DynMSModelDef)
+function _dynms_continuous_event_codes(dynms::DynMSModel)
   event_codes = OrderedDict{Symbol,DynMSJuliaConditionalEventCode}()
   for (id, event) in dynms.continuous_events
     event_codes[id] = DynMSJuliaConditionalEventCode(
@@ -128,7 +107,7 @@ function _dynms_continuous_event_codes(dynms::DynMSModelDef)
   return event_codes
 end
 
-function _dynms_discrete_event_codes(dynms::DynMSModelDef)
+function _dynms_discrete_event_codes(dynms::DynMSModel)
   event_codes = OrderedDict{Symbol,DynMSJuliaConditionalEventCode}()
   for (id, event) in dynms.discrete_events
     event_codes[id] = DynMSJuliaConditionalEventCode(
@@ -141,7 +120,7 @@ function _dynms_discrete_event_codes(dynms::DynMSModelDef)
   return event_codes
 end
 
-function _dynms_stop_event_codes(dynms::DynMSModelDef)
+function _dynms_stop_event_codes(dynms::DynMSModel)
   event_codes = OrderedDict{Symbol,DynMSJuliaStopEventCode}()
   for (id, event) in dynms.stop_events
     event_codes[id] = DynMSJuliaStopEventCode(
@@ -161,14 +140,14 @@ debugging, review, and packages that load generated Julia source.
 """
 function write_dynms_julia(dynms_json::AbstractString, julia_path::AbstractString)
   
-  return write_dynms_julia(parse_dynms_spec(dynms_json), julia_path)
+  return write_dynms_julia(parse_dynms(dynms_json), julia_path)
 end
 
 function write_dynms_julia(data::AbstractDict, julia_path::AbstractString)
-  return write_dynms_julia(parse_dynms_spec(data), julia_path)
+  return write_dynms_julia(parse_dynms(data), julia_path)
 end
 
-function write_dynms_julia(dynms::DynMSSpec, julia_path::AbstractString)
+function write_dynms_julia(dynms::DynMSModelSet, julia_path::AbstractString)
   return write_dynms_julia(_dynms_spec_code(dynms), julia_path)
 end
 
@@ -187,11 +166,10 @@ Inactive runtime function bridge.
 This code used to convert DynMSJulia*Code objects directly into the old
 Platform tuple with RuntimeGeneratedFunctions. It is not needed for
 write_dynms_julia, but it is kept here as a starting point for future
-ODEProblem / ModelingToolkit construction from the same Julia code
-representation.
+ODEProblem construction from the same Julia code representation.
 
 # Convert DynMS code definitions to the tuple returned by generated `model.jl` file.
-_platform_tuple(dynms::DynMSSpec) = _platform_tuple(_dynms_spec_code(dynms))
+_platform_tuple(dynms::DynMSModelSet) = _platform_tuple(_dynms_spec_code(dynms))
 
 function _platform_tuple(spec_code::DynMSJuliaSpecCode)
   models_nt = (; (
@@ -239,7 +217,7 @@ function _dynms_lambda(args::Vector{Symbol}, body)
   return Expr(:->, Expr(:tuple, args...), body)
 end
 
-_dynms_saving_generator(dynms::DynMSModelDef) =
+_dynms_saving_generator(dynms::DynMSModel) =
   _dynms_saving_generator(DynMSJuliaSavingGeneratorCode(Symbol(dynms.id, "_saving_generator_"), dynms, _dynms_output_ids(dynms)))
 
 function _dynms_saving_generator(generator_code::DynMSJuliaSavingGeneratorCode)
@@ -263,7 +241,7 @@ function _dynms_saving_generator(generator_code::DynMSJuliaSavingGeneratorCode)
   end
 end
 
-function _dynms_saving_function(dynms::DynMSModelDef, output_ids::Vector{Symbol})
+function _dynms_saving_function(dynms::DynMSModel, output_ids::Vector{Symbol})
   stmts = []
   _add_dynms_header_bindings!(stmts, dynms; integrator_p=true)
   _add_dynms_assignment_bindings!(stmts, dynms)
@@ -281,7 +259,7 @@ _dynms_events_namedtuple(events_dict) =
 
 function _dynms_event_tuple(event_code::DynMSJuliaTimeEventCode)
   return (
-    _dynms_runtime_function(event_code.tstops_func),
+    _dynms_runtime_function(event_code.schedule_func),
     _dynms_runtime_function(event_code.affect_func),
     event_code.initial_affect
   )
@@ -307,21 +285,21 @@ function _dynms_function(name::Symbol, args::Vector{Symbol}, stmts)
   return DynMSJuliaFunction(name, args, Expr(:block, stmts...))
 end
 
-function _dynms_init_function(dynms::DynMSModelDef)
+function _dynms_init_function(dynms::DynMSModel)
   stmts = [:(t = 0.0)]
   _add_dynms_constant_bindings!(stmts, dynms)
 
   for (id, state) in dynms.states
     push!(stmts, Expr(:(=), id, state.initial))
   end
-  for (id, static_initial) in dynms.statics
+  for (id, static_initial) in dynms.parameters.discrete
     push!(stmts, Expr(:(=), id, static_initial))
   end
 
   for (i, id) in enumerate(keys(dynms.states))
     push!(stmts, :(__u0__[$i] = $id))
   end
-  for (i, id) in enumerate(keys(dynms.statics))
+  for (i, id) in enumerate(keys(dynms.parameters.discrete))
     push!(stmts, :(__p0__[$i] = $id))
   end
 
@@ -329,7 +307,7 @@ function _dynms_init_function(dynms::DynMSModelDef)
   return _dynms_function(Symbol(dynms.id, "_init_func_!"), [:__u0__, :__p0__, :__constants__], stmts)
 end
 
-function _dynms_ode_function(dynms::DynMSModelDef)
+function _dynms_ode_function(dynms::DynMSModel)
   stmts = []
   _add_dynms_header_bindings!(stmts, dynms; integrator_p=false)
   _add_dynms_assignment_bindings!(stmts, dynms)
@@ -342,7 +320,7 @@ function _dynms_ode_function(dynms::DynMSModelDef)
   return _dynms_function(Symbol(dynms.id, "_ode_func_"), [:__du__, :__u__, :__p__, :t], stmts)
 end
 
-function _dynms_tstops_function(dynms::DynMSModelDef, event::DynMSTimeEventDef)
+function _dynms_tstops_function(dynms::DynMSModel, event::DynMSTimeEvent)
 
   stmts = []
   _add_dynms_constant_bindings!(stmts, dynms)
@@ -362,7 +340,7 @@ function _dynms_tstops_function(dynms::DynMSModelDef, event::DynMSTimeEventDef)
   )
 end
 
-function _dynms_condition_function(dynms::DynMSModelDef, event::Union{DynMSContinuousEventDef,DynMSDiscreteEventDef,DynMSStopEventDef})
+function _dynms_condition_function(dynms::DynMSModel, event::Union{DynMSContinuousEvent,DynMSDiscreteEvent,DynMSStopEvent})
   stmts = []
   _add_dynms_header_bindings!(stmts, dynms; integrator_p=true)
   _add_dynms_assignment_bindings!(stmts, dynms)
@@ -375,13 +353,13 @@ function _dynms_condition_function(dynms::DynMSModelDef, event::Union{DynMSConti
   )
 end
 
-function _dynms_affect_function(dynms::DynMSModelDef, event)
+function _dynms_affect_function(dynms::DynMSModel, event)
   stmts = [:(t = __integrator__.t)]
   _add_dynms_header_bindings!(stmts, dynms; integrator_p=true, integrator_u=true)
   _add_dynms_assignment_bindings!(stmts, dynms)
 
   state_index = Dict(id => i for (i, id) in enumerate(keys(dynms.states)))
-  static_index = Dict(id => i for (i, id) in enumerate(keys(dynms.statics)))
+  static_index = Dict(id => i for (i, id) in enumerate(keys(dynms.parameters.discrete)))
 
   for (id, rhs_expr) in event.state_affects
     idx = state_index[id]
@@ -400,16 +378,16 @@ function _dynms_affect_function(dynms::DynMSModelDef, event)
   )
 end
 
-_add_dynms_constant_bindings!(stmts, dynms::DynMSModelDef) =
-  push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = __constants__ ))
+_add_dynms_constant_bindings!(stmts, dynms::DynMSModel) =
+  push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.tunable)...)) = __constants__ ))
 
-function _add_dynms_header_bindings!(stmts, dynms::DynMSModelDef; integrator_p::Bool=false, integrator_u::Bool=false)
+function _add_dynms_header_bindings!(stmts, dynms::DynMSModel; integrator_p::Bool=false, integrator_u::Bool=false)
   if integrator_p
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.statics)...)) = __integrator__.p.x[1] ))
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = __integrator__.p.x[2] ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.discrete)...)) = __integrator__.p.x[1] ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.tunable)...)) = __integrator__.p.x[2] ))
   else
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.statics)...)) = __p__.x[1] ))
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.constants)...)) = __p__.x[2] ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.discrete)...)) = __p__.x[1] ))
+    push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.tunable)...)) = __p__.x[2] ))
   end
   if integrator_u
     push!(stmts, :( $(Expr(:tuple, keys(dynms.states)...)) = __integrator__.u ))
@@ -420,7 +398,7 @@ function _add_dynms_header_bindings!(stmts, dynms::DynMSModelDef; integrator_p::
   return nothing
 end
 
-function _add_dynms_assignment_bindings!(stmts, dynms::DynMSModelDef)
+function _add_dynms_assignment_bindings!(stmts, dynms::DynMSModel)
   for (r,rule) in dynms.assignment_rules
     push!(stmts, Expr(:(=), r, rule))
   end
@@ -501,7 +479,7 @@ function _dynms_model_source(io::IO, model_code::DynMSJuliaModelCode)
 
   println(io, "### TIME EVENTS ###")
   for event_code in values(model_code.time_events)
-    _dynms_function_source(io, event_code.tstops_func)
+    _dynms_function_source(io, event_code.schedule_func)
     _dynms_function_source(io, event_code.affect_func)
   end
   _dynms_event_namedtuple_source(io, time_events_name, model_code.time_events)
@@ -544,26 +522,6 @@ function _dynms_model_source(io::IO, model_code::DynMSJuliaModelCode)
   println(io, ")")
   println(io)
 
-  return nothing
-end
-
-function _dynms_function_source(io::IO, func::DynMSJuliaFunction)
-  println(io, "function $(func.name)($(join(func.args, ", ")))")
-  for stmt in func.body.args
-    _dynms_statement_source(io, stmt, 2)
-  end
-  println(io, "end")
-  println(io)
-  return nothing
-end
-
-function _dynms_statement_source(io::IO, stmt, indent::Int)
-  stmt isa LineNumberNode && return nothing
-  stmt_string = _dynms_expr_source(stmt)
-  prefix = " "^indent
-  for line in split(stmt_string, '\n')
-    println(io, prefix, line)
-  end
   return nothing
 end
 
@@ -612,7 +570,7 @@ function _dynms_event_namedtuple_source(io::IO, name::Symbol, event_codes)
 end
 
 function _dynms_event_value_source(event_code::DynMSJuliaTimeEventCode)
-  return "($(event_code.tstops_func.name), $(event_code.affect_func.name), $(repr(event_code.initial_affect)))"
+  return "($(event_code.schedule_func.name), $(event_code.affect_func.name), $(repr(event_code.initial_affect)))"
 end
 
 function _dynms_event_value_source(event_code::DynMSJuliaConditionalEventCode)
@@ -632,7 +590,3 @@ function _dynms_symbol_vector_source(ids::Vector{Symbol})
   return "Symbol[" * join((repr(id) for id in ids), ", ") * "]"
 end
 
-function _dynms_expr_source(ex)
-  clean_ex = Base.remove_linenums!(deepcopy(ex))
-  return sprint(io -> Base.show_unquoted(io, clean_ex, 0, 0))
-end

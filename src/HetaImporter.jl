@@ -4,9 +4,14 @@ using JSON
 using MathJSON
 using RuntimeGeneratedFunctions
 using DataStructures
+using DiffEqCallbacks
 using LinearAlgebra
 using Pkg, Pkg.Artifacts
 import Base: SHA1
+using SciMLBase
+using SciMLStructures
+import SymbolicIndexingInterface as SII
+
 
 RuntimeGeneratedFunctions.init(@__MODULE__)
 
@@ -29,12 +34,18 @@ const heta_exe_path = heta_path === nothing ? heta_exe_name : joinpath(heta_path
 
 include("heta_cli.jl")
 include("build_julia_file.jl")
-include("parse_dynms.jl")
-include("dynms_julia_codegen.jl")
+include("parse_heta.jl")
+include("heta_parameters.jl")
+include("old_format_codegen.jl")
+include("heta_system.jl")
+include("heta_system_codegen.jl")
+include("heta_system_runtime.jl")
 
 export heta_version, heta_help, heta_init, heta_build
 export build_dynms_file, build_julia_file
-export parse_dynms_spec, parse_dynms_model
-export write_dynms_julia 
+export parse_heta, parse_dynms, parse_dynms_model, import_heta, import_heta_all
+export HetaODESystem, HetaParameters, build_ode_system
+export write_dynms_julia, write_generated_code
+export equations, initial_conditions, parameters, observed, events
 
 end

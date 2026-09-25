@@ -1,10 +1,10 @@
 @testset "DynMS parser: discrete switcher" begin
-  spec = _parse_fresh_dynms_spec("16-d-switcher")
+  spec = _parse_fresh_heta("16-d-switcher")
   model = spec.models[:nameless]
 
-  @test collect(keys(model.constants)) == [:k1]
+  @test collect(keys(model.parameters.tunable)) == [:k1]
   @test collect(keys(model.states)) == [:S1_amt_, :x1]
-  @test collect(keys(model.statics)) == [:comp1, :S2_amt_, :x2]
+  @test collect(keys(model.parameters.discrete)) == [:comp1, :S2_amt_, :x2]
   @test model.observables == [:S1, :S2, :x1, :x2]
 
   @test isempty(model.time_events)
