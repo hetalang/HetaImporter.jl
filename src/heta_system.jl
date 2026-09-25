@@ -65,7 +65,7 @@ function build_ode_system(
 )
   if model_id === nothing
     length(model_set.models) == 1 || throw(ArgumentError(
-      "model_id must be provided when the DynMS document contains more than one model",
+      "model_id must be provided when Heta contains more than one model",
     ))
     model_id = first(keys(model_set.models))
   end
@@ -79,7 +79,7 @@ end
     import_heta(heta_dir; model_id=nothing, write_to_file=false,
                 filename=nothing, kwargs...)
 
-Compile a Heta project to DynMS, parse it, and lower the selected model to a
+Compile a Heta project, parse it, and lower the selected model to a
 native [`HetaODESystem`](@ref). Remaining keyword arguments are forwarded to
 [`parse_heta`](@ref).
 """
@@ -102,7 +102,7 @@ end
 """
     import_heta_all(heta_dir; write_to_file=false, output_dir=".", kwargs...)
 
-Compile a Heta project to DynMS and return every model as an
+Compile a Heta project and return every model as an
 `OrderedDict{Symbol,<:HetaODESystem}` keyed by model ID. Remaining keyword
 arguments are forwarded to [`parse_heta`](@ref).
 

@@ -7,10 +7,41 @@ import SymbolicIndexingInterface as SII
 if !isdefined(@__MODULE__, :HETA_SYSTEM_TEST_MODELS)
   const HETA_SYSTEM_TEST_MODELS = joinpath(@__DIR__, "..", "models", "dynms")
 end
+
+@testset "numeric DynMS expression fields" begin
+  static_model = Dict{String,Any}(
+    "id" => "numeric_fields",
+    "static" => [Dict("id" => "p", "initial" => true)],
+  )
+  @test_throws ArgumentError HetaImporter.parse_dynms_model(static_model)
+  static_model["static"][1]["initial"] = "True"
+  @test_throws ArgumentError HetaImporter.parse_dynms_model(static_model)
+
+  static_model["static"][1]["initial"] = 1.0
+  static_model["assignments"] = [Dict("id" => "flag", "rhs" => true)]
+  @test_throws ArgumentError HetaImporter.parse_dynms_model(static_model)
+  delete!(static_model, "assignments")
+
+  dynamic_model = Dict{String,Any}(
+    "id" => "numeric_fields",
+    "dynamic" => [Dict("id" => "x", "initial" => false, "derivative" => 0.0)],
+  )
+  @test_throws ArgumentError HetaImporter.parse_dynms_model(dynamic_model)
+  dynamic_model["dynamic"][1]["initial"] = 0.0
+  dynamic_model["dynamic"][1]["derivative"] = false
+  @test_throws ArgumentError HetaImporter.parse_dynms_model(dynamic_model)
+
+  static_model["timeEvents"] = [Dict(
+    "id" => "change",
+    "trigger" => Dict("start" => 0.0),
+    "actions" => [Dict("state" => "p", "rhs" => true)],
+  )]
+  @test_throws ArgumentError HetaImporter.parse_dynms_model(static_model)
+end
 if !isdefined(@__MODULE__, :_parse_fresh_heta)
   function _parse_fresh_heta(model_name::AbstractString)
     return mktempdir() do build_dir
-      parse_heta(joinpath(HETA_SYSTEM_TEST_MODELS, model_name); build_dir)
+      HetaImporter.parse_heta(joinpath(HETA_SYSTEM_TEST_MODELS, model_name); build_dir)
     end
   end
 end

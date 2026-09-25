@@ -15,20 +15,6 @@ function Base.getproperty(system::HetaODESystem, symbol::Symbol)
   return getfield(system, symbol)
 end
 
-function Base.propertynames(system::HetaODESystem, private::Bool=false)
-  fields = fieldnames(typeof(system))
-  private && return fields
-  dynms = getfield(system, :dynms)
-  return (
-    fields...,
-    keys(dynms.states)...,
-    keys(dynms.parameters.tunable)...,
-    keys(dynms.parameters.discrete)...,
-    keys(dynms.assignment_rules)...,
-    :t,
-  )
-end
-
 """Return the state derivative expressions of `system`, keyed by state name."""
 function equations(system::HetaODESystem)
   return OrderedDict{Symbol,Any}(

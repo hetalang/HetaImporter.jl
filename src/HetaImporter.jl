@@ -16,8 +16,8 @@ import SymbolicIndexingInterface as SII
 RuntimeGeneratedFunctions.init(@__MODULE__)
 
 # heta-compiler supported version
-const HETA_COMPILER_VERSION = "0.12.1"
-const DYNMS_VERSION = "0.2.0"
+const HETA_COMPILER_VERSION = "0.12.2"
+const DYNMS_VERSION = "0.2.1"
 const DYNMS_SUPPORTED_VERSIONS = (DYNMS_VERSION,)
 
 function heta_compiler_load()
@@ -41,9 +41,11 @@ include("heta_system.jl")
 include("heta_system_codegen.jl")
 include("heta_system_runtime.jl")
 
+# Heta API 
 export heta_version, heta_help, heta_init, heta_build
+
 export build_dynms_file, build_julia_file
-export parse_heta, parse_dynms, parse_dynms_model, import_heta, import_heta_all
+export import_heta, import_heta_all
 export HetaODESystem, HetaParameters, build_ode_system
 export write_dynms_julia, write_generated_code
 export equations, initial_conditions, parameters, observed, events

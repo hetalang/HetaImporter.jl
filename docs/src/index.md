@@ -39,7 +39,7 @@ julia_path = build_julia_file(
 )
 ```
 
-## DynMS Parser
+## Advanced: DynMS Parser
 
 DynMS JSON can also be parsed directly:
 
@@ -49,7 +49,7 @@ dynms_path = build_dynms_file(
   build_dir = "path/to/build"
 )
 
-spec = parse_dynms(dynms_path)
+spec = HetaImporter.parse_dynms(dynms_path)
 model = spec.models[:my_model]
 ```
 

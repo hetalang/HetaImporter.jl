@@ -7,7 +7,7 @@ _dynms_model_dir(model_name::AbstractString) = joinpath(DYNMS_TEST_MODELS_DIR, m
 
 function _parse_fresh_heta(model_name::AbstractString)
   return mktempdir() do build_dir
-        parse_heta(_dynms_model_dir(model_name); build_dir)
+        HetaImporter.parse_heta(_dynms_model_dir(model_name); build_dir)
   end
 end
 

@@ -1,4 +1,4 @@
-const DynMSExpr = Union{Expr,Symbol,Float64,Bool}
+const DynMSExpr = Union{Expr,Symbol,Float64}
 const DynMSVal = Union{Symbol, Float64}
 
 abstract type AbstractDynMSEvent end
@@ -56,10 +56,6 @@ struct DynMSParameters
   discrete::OrderedDict{Symbol,DynMSExpr}
 end
 
-# Internal DynMS IR boundary:
-# JSON parsing should stop here. Julia source generation and ODEProblem
-# construction should be adapters over this parsed DynMSModel/DynMSModelSet
-# plus generated DynMSJuliaFunction objects.
 struct DynMSModel
   id::Symbol
   parameters::DynMSParameters
@@ -255,7 +251,7 @@ function _parse_dynms_discrete(model::AbstractDict)
   discrete = OrderedDict{Symbol,DynMSExpr}()
   for state in _dynms_static_defs(model)
     id = Symbol(string(state["id"]))
-    discrete[id] = _parse_dynms_expr(get(state, "initial", 0.0))
+    discrete[id] = _parse_dynms_numeric_expr(get(state, "initial", 0.0), "static state '$id' initial value")
   end
   return discrete
 end
@@ -264,7 +260,7 @@ function _parse_dynms_assignments(model::AbstractDict)
   assignment_rules = OrderedDict{Symbol,DynMSExpr}()
   for assignment in get(model, "assignments", Any[])
     id = Symbol(string(assignment["id"]))
-    assignment_rules[id] = _parse_dynms_expr(assignment["rhs"])
+    assignment_rules[id] = _parse_dynms_numeric_expr(assignment["rhs"], "assignment '$id'")
   end
   return assignment_rules
 end
@@ -277,8 +273,8 @@ function _parse_dynms_states(model::AbstractDict)
       throw(ArgumentError("DynMS dynamic state '$id' does not include a derivative."))
 
     states[Symbol(id)] = DynMSState(
-      _parse_dynms_expr(get(state, "initial", 0.0)),
-      _parse_dynms_expr(state["derivative"]),
+      _parse_dynms_numeric_expr(get(state, "initial", 0.0), "dynamic state '$id' initial value"),
+      _parse_dynms_numeric_expr(state["derivative"], "dynamic state '$id' derivative"),
       Bool(get(state, "algebraic", false))
     )
   end
@@ -385,7 +381,7 @@ function _parse_dynms_event_affects(model::AbstractDict, event)
   for action in get(event, "actions", Any[])
     state_id = string(action["state"])
     target = Symbol(state_id)
-    rhs = _parse_dynms_expr(action["rhs"])
+    rhs = _parse_dynms_numeric_expr(action["rhs"], "event $(event["id"]) update to '$state_id'")
 
     if state_id in dynamic_state_ids
       state_affects[target] = rhs
@@ -445,10 +441,17 @@ function _parse_dynms_condition(expr)
   throw(ArgumentError("DynMS event condition must parse to Expr or Symbol, got: $parsed"))
 end
 
+function _parse_dynms_numeric_expr(expr, context)
+  parsed = _parse_dynms_expr(expr)
+  parsed isa Bool &&
+    throw(ArgumentError("DynMS $context must be numeric, got Boolean: $parsed"))
+  return parsed::DynMSExpr
+end
+
 function _parse_dynms_expr(expr)
   payload = _dynms_expr_payload(expr)
-  payload isa Number && return Float64(payload)
   payload isa Bool && return payload
+  payload isa Number && return Float64(payload)
 
   try
     mathjson_expr = parse(MathJSON.MathJSONFormat, JSON.json(payload))
@@ -488,10 +491,10 @@ function _dynms_mathjson_to_julia(expr::MathJSON.FunctionExpr)
 end
 
 function _dynms_raw_expr_to_julia(payload)
-  if payload isa Number
-    return Float64(payload)
-  elseif payload isa Bool
+  if payload isa Bool
     return payload
+  elseif payload isa Number
+    return Float64(payload)
   elseif payload isa AbstractString
     return _dynms_symbol_to_julia(payload)
   elseif payload isa AbstractVector

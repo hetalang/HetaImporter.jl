@@ -1,13 +1,14 @@
-function _heta_symbols!(symbols::Set{Symbol}, value)
-  if value isa Symbol
+# similar to MacroTools expression walking
+function _heta_expr_walk!(symbols::Set{Symbol}, value)
+  if value isa Symbol 
     push!(symbols, value)
   elseif value isa Expr
     first_argument = value.head === :call ? 2 : 1
     for i in first_argument:length(value.args)
-      _heta_symbols!(symbols, value.args[i])
+      _heta_expr_walk!(symbols, value.args[i])
     end
   elseif value isa Tuple || value isa AbstractArray
-    foreach(Base.Fix1(_heta_symbols!, symbols), value)
+    foreach(Base.Fix1(_heta_expr_walk!, symbols), value)
   end
   return symbols
 end
@@ -16,14 +17,15 @@ function _heta_required_assignments(
   assignment_rules::OrderedDict{Symbol,DynMSExpr},
   roots,
 )
+  # push! to Set checks duplicates
   needed = Set{Symbol}()
-  foreach(root -> _heta_symbols!(needed, root), roots)
+  foreach(root -> _heta_expr_walk!(needed, root), roots)
   required = Symbol[]
 
   for (id, rhs) in Iterators.reverse(assignment_rules)
     if id in needed
       push!(required, id)
-      _heta_symbols!(needed, rhs)
+      _heta_expr_walk!(needed, rhs)
     end
   end
 

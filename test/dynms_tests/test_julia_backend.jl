@@ -9,7 +9,7 @@ if !isdefined(@__MODULE__, :_parse_fresh_heta)
   const JULIA_BACKEND_TEST_MODELS = joinpath(@__DIR__, "..", "models", "dynms")
   function _parse_fresh_heta(model_name::AbstractString)
     return mktempdir() do build_dir
-      parse_heta(joinpath(JULIA_BACKEND_TEST_MODELS, model_name); build_dir)
+      HetaImporter.parse_heta(joinpath(JULIA_BACKEND_TEST_MODELS, model_name); build_dir)
     end
   end
 end

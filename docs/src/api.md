@@ -17,17 +17,17 @@ build_julia_file
 write_dynms_julia
 ```
 
-## Heta Parsing
+## Advanced: Heta Parsing
 
 ```@docs
-parse_heta
+HetaImporter.parse_heta
 ```
 
-## DynMS Parsing
+## Advanced: DynMS Parsing
 
 ```@docs
-parse_dynms
-parse_dynms_model
+HetaImporter.parse_dynms
+HetaImporter.parse_dynms_model
 ```
 
 ## Heta Import and ODE Construction
