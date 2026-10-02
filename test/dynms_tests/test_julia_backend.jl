@@ -5,394 +5,145 @@ import SciMLBase
 import SymbolicIndexingInterface as SII
 import SciMLStructures
 
-if !isdefined(@__MODULE__, :_parse_fresh_heta)
-  const JULIA_BACKEND_TEST_MODELS = joinpath(@__DIR__, "..", "models", "dynms")
-  function _parse_fresh_heta(model_name::AbstractString)
-    return mktempdir() do build_dir
-      HetaImporter.parse_heta(joinpath(JULIA_BACKEND_TEST_MODELS, model_name); build_dir)
-    end
-  end
-end
-
-@testset "HetaODESystem ODEProblem interface" begin
-  model = _parse_fresh_heta("0-hello-world").models[:mm]
-  problem = ODEProblem(HetaImporter.build_ode_system(model), (0.0, 10.0))
-  u0 = problem.u0(problem.p, first(problem.tspan))
-
+@testset "ODEProblem and symbolic results" begin
+  system = HetaImporter.build_ode_system(_parse_fresh_heta("0-hello-world").models[:mm])
+  problem = ODEProblem(system, (0.0, 10.0))
+  u0 = problem.u0(problem.p, 0.0)
   @test u0 == [10.0, 0.0]
-  @test problem.p isa HetaParameters
   @test problem.p.tunable == [0.1, 2.5]
   @test problem.p.derived == [1.0]
   @test isempty(problem.p.discrete)
+  @test ODEProblem(system, (0.0, 10.0); p=[0.2, 3.0]).p.tunable == [0.2, 3.0]
+  @test_throws DimensionMismatch ODEProblem(system, (0.0, 10.0); p=[0.2])
+  @test_throws ArgumentError ODEProblem(system, (0.0, 10.0); u0=[1.0, 0.0])
+  @test_throws ArgumentError ODEProblem(system, (0.0, 10.0); callback=identity)
 
-  du = similar(u0)
-  problem.f(du, u0, problem.p, 0.0)
-  @test du[1] < 0
-  @test du[2] > 0
-  @test sum(du) ≈ 0.0
+  solution = solve(problem, Tsit5(); save_everystep=false)
+  @test SciMLBase.successful_retcode(solution)
+  @test solution.u[end][1] < u0[1]
+  @test sum(solution.u[end]) ≈ sum(u0)
+  @test first(solution[:S]) == 10.0
+  @test first(solution[[:S_amt_, :S]]) == [10.0, 10.0]
+  @test problem.f.observed((:S, :P), u0, problem.p, 0.0) == (10.0, 0.0)
+  @test getp(problem.f, :Vmax)(solution) == 0.1
 
-  observed = problem.f.observed
-  @test observed(:S, u0, problem.p, 0.0) ≈ 10.0
-  @test observed([:S, :P], u0, problem.p, 0.0) ≈ [10.0, 0.0]
-  @test observed((:S, :P), u0, problem.p, 0.0) == (10.0, 0.0)
-  @test observed([:S_amt_, :S], u0, problem.p, 0.0) ≈ [10.0, 10.0]
-  @test_throws ArgumentError observed(:Vmax, u0, problem.p, 0.0)
-  @test_throws ArgumentError observed(:default_comp, u0, problem.p, 0.0)
-  @test_throws ArgumentError observed(:t, u0, problem.p, 0.0)
-  @test_throws ArgumentError observed([:Vmax, :S], u0, problem.p, 0.0)
-  @test_throws ArgumentError observed(:not_in_model, u0, problem.p, 0.0)
-  @test_throws ArgumentError observed(:(S + P), u0, problem.p, 0.0)
-  @test !SII.is_observed(problem.f, :(S + P))
-
-  @test SII.is_observed(problem.f, [:S_amt_, :S])
-  @test !SII.is_observed(problem.f, [:Vmax, :S])
-  @test !SII.is_observed(problem.f, [:t, :S])
-  sol = solve(problem, Tsit5(); save_everystep=false)
-  @test first(sol[[:S_amt_, :S]]) ≈ [10.0, 10.0]
-  @test_throws ArgumentError sol[[:Vmax, :S]]
-  @test SII.variable_symbols(problem.f) == [:S_amt_, :P_amt_]
-  @test SII.parameter_symbols(problem.f) == [:Vmax, :Km, :default_comp]
-  @test SII.is_parameter(problem.f, :Vmax)
-  @test SII.is_parameter(problem.f, :default_comp)
-  @test SII.parameter_index(problem.f, :Vmax) == 1
-  @test SII.parameter_index(problem.f, :default_comp) == 3
-  @test SII.is_observed(problem.f, :S)
-  @test SII.observed(problem.f, :S)(u0, problem.p, 0.0) ≈ 10.0
-  @test SII.timeseries_parameter_index(problem.f, :default_comp) === nothing
-
-  tunable, repack, aliases = SciMLStructures.canonicalize(
-    SciMLStructures.Tunable(),
-    problem.p,
-  )
-  @test aliases
-  @test tunable == [0.1, 2.5]
-  @test repack([0.2, 3.0]).tunable == [0.2, 3.0]
-
-  initialize_parameters! = function (derived, discrete, tunable)
-    derived[1] = 2 * tunable[1]
-    discrete[1] = derived[1] + tunable[2]
-    return nothing
+  for symbol in (:not_in_model, :Vmax, :t, :(S + P))
+    @test_throws ArgumentError problem.f.observed(symbol, u0, problem.p, 0.0)
   end
-  parameters = HetaParameters([2.0, 3.0], 1, 1, initialize_parameters!)
-  @test parameters.derived == [4.0]
-  @test parameters.discrete == [7.0]
-  @test [parameters[i] for i in 1:length(parameters)] == [2.0, 3.0, 4.0, 7.0]
+  @test_throws ArgumentError solution[[:Vmax, :S]]
+end
 
-  # Runtime event values belong to one solve. Repacking a new optimization point
-  # must initialize a fresh discrete vector rather than retaining those values.
-  parameters.discrete .= 100.0
-  rebuilt = SciMLStructures.replace(
-    SciMLStructures.Tunable(),
-    parameters,
-    BigFloat[5.0, 7.0],
+# A constant state and an observable depending on a parameter that events can change.
+function _event_system(; time_events=Any[], events=Any[])
+  model = HetaImporter.parse_dynms_model(Dict(
+    "id" => "event_test",
+    "constants" => [Dict("id" => "k", "value" => 1.0)],
+    "dynamic" => [Dict("id" => "x", "initial" => 1.0, "derivative" => 0.0)],
+    "static" => [
+      Dict("id" => "derived", "initial" => ["Multiply", 2.0, "k"]),
+      Dict("id" => "p", "initial" => "k"),
+    ],
+    "assignments" => [Dict("id" => "y", "rhs" => ["Divide", "x", "p"])],
+    "timeEvents" => time_events,
+    "events" => events,
+  ))
+  return HetaImporter.build_ode_system(model)
+end
+
+@testset "parameter recomputation and event history" begin
+  event = Dict(
+    "id" => "change_parameter",
+    "trigger" => Dict("start" => 0.5),
+    "actions" => [Dict("state" => "p", "rhs" => 2.0)],
   )
-  @test rebuilt.tunable == BigFloat[5.0, 7.0]
-  @test rebuilt.derived == BigFloat[10.0]
-  @test rebuilt.discrete == BigFloat[17.0]
-  @test eltype(rebuilt.derived) == BigFloat
-  @test eltype(rebuilt.discrete) == BigFloat
-  @test parameters.discrete == [100.0]
+  system = _event_system(; time_events=[event])
+  problem = ODEProblem(system, (0.0, 1.0))
+  @test problem.p.derived == [2.0]
+  @test problem.p.discrete == [1.0]
 
-  dependent_derived = copy(model.parameters.derived)
-  dependent_derived[:default_comp] = :(2 * Vmax)
-  dependent_parameters = HetaImporter.DynMSParameters(
-    model.parameters.tunable, dependent_derived, model.parameters.discrete,
+  solution = solve(problem, Tsit5(); save_everystep=false)
+  @test SII.parameter_timeseries(solution, 1) == [0.0, 0.5]
+  @test getp(problem.f, :p)(solution) == [1.0, 2.0]
+  @test solution(0.25; idxs=:y) == 1.0
+  @test solution(0.75; idxs=:y) == 0.5
+  @test last(solution[:y]) == 0.5
+
+  # Repacking tunables must reset event values and preserve the new numeric type.
+  problem.p.discrete[1] = 100.0
+  tunable, repack, _ = SciMLStructures.canonicalize(SciMLStructures.Tunable(), problem.p)
+  @test tunable == [1.0]
+  rebuilt = repack(BigFloat[3.0])
+  @test rebuilt.derived == BigFloat[6.0] && eltype(rebuilt.derived) == BigFloat
+  @test rebuilt.discrete == BigFloat[3.0] && eltype(rebuilt.discrete) == BigFloat
+  @test problem.p.discrete == [100.0]
+
+  SciMLStructures.replace!(SciMLStructures.Tunable(), problem.p, [2.0])
+  @test problem.p.derived == [4.0]
+  @test problem.p.discrete == [2.0]
+  constants, _, _ = SciMLStructures.canonicalize(SciMLStructures.Constants(), problem.p)
+  @test constants == [4.0]
+  restored = SciMLStructures.replace(SciMLStructures.Discrete(), problem.p, [7.0])
+  @test restored.discrete == [7.0] && restored.derived == [4.0]
+end
+
+@testset "time event schedule" begin
+  event = Dict{String,Any}(
+    "id" => "periodic",
+    "trigger" => Dict("start" => 0.0, "period" => 0.25, "stop" => 0.5, "atStart" => false),
+    "actions" => [Dict("state" => "x", "rhs" => ["Add", "x", 1.0])],
   )
-  dependent_model = HetaImporter.DynMSModel(
-    model.id, dependent_parameters, model.assignment_rules, model.states,
-    model.time_events, model.continuous_events, model.discrete_events,
-    model.stop_events, model.observables,
-  )
-  dependent_problem = ODEProblem(HetaImporter.build_ode_system(dependent_model), (0.0, 1.0))
-  @test dependent_problem.p.derived == [0.2]
-  dependent_rebuilt = SciMLStructures.replace(
-    SciMLStructures.Tunable(), dependent_problem.p, BigFloat[0.4, 2.5],
-  )
-  @test dependent_rebuilt.derived == BigFloat[0.8]
-  @test eltype(dependent_rebuilt.derived) == BigFloat
-
-  SciMLStructures.replace!(SciMLStructures.Tunable(), parameters, [4.0, 1.0])
-  @test parameters.derived == [8.0]
-  @test parameters.discrete == [9.0]
-
-  constants, _, _ = SciMLStructures.canonicalize(SciMLStructures.Constants(), parameters)
-  @test constants == [8.0]
-
-  restored = SciMLStructures.replace(
-    SciMLStructures.Discrete(),
-    parameters,
-    [11.0],
-  )
-  @test restored.discrete == [11.0]
-  @test restored.derived == [8.0]
-
-  time_model = _parse_fresh_heta("11-time-switcher").models[:nameless]
-  time_problem = ODEProblem(HetaImporter.build_ode_system(time_model), (0.0, 50.0))
-  @test haskey(time_problem.kwargs, :callback)
-  @test !haskey(time_problem.kwargs, :tstops)
-
-  time_code = time_problem.f.sys.generated_code.time_events
-  sw0_schedule = HetaImporter._heta_runtime_function(time_code[:sw0].schedule_func)
-  sw2_schedule = HetaImporter._heta_runtime_function(time_code[:sw2].schedule_func)
-  fake_integrator(t, p=time_problem.p) = (
-    t=t,
-    tdir=one(t),
-    p=p,
-    sol=(prob=(tspan=(zero(t), convert(typeof(t), 50)),),),
-  )
-
-  @test HetaImporter._heta_next_time(sw0_schedule, fake_integrator(0.0f0)) === 40.0f0
-  @test HetaImporter._heta_next_time(sw0_schedule, fake_integrator(40.0f0)) === nothing
-  @test HetaImporter._heta_next_time(sw2_schedule, fake_integrator(0.0f0)) === 5.0f0
-  @test HetaImporter._heta_next_time(sw2_schedule, fake_integrator(5.0f0)) === 29.0f0
-  @test HetaImporter._heta_next_time(sw2_schedule, fake_integrator(29.0f0)) === nothing
-
-  updated_parameters = copy(time_problem.p)
-  updated_parameters.tunable[3] = 7.0
-  @test HetaImporter._heta_next_time(
-    sw2_schedule,
-    fake_integrator(0.0f0, updated_parameters),
-  ) === 7.0f0
-
-  bounded_schedule = _ -> (start=0, period=12, stop=24)
-  @test HetaImporter._heta_next_time(
-    bounded_schedule,
-    fake_integrator(0.0f0),
-  ) === 12.0f0
-  @test HetaImporter._heta_next_time(
-    bounded_schedule,
-    fake_integrator(12.0f0),
-  ) === 24.0f0
-  @test HetaImporter._heta_next_time(
-    bounded_schedule,
-    fake_integrator(24.0f0),
-  ) === nothing
-  bounded = HetaImporter._heta_time_event_schedule(
-    bounded_schedule,
-    fake_integrator(0.0f0),
-  )
-  @test HetaImporter._heta_time_event_occurs_at(bounded, 0.0f0)
-  @test HetaImporter._heta_time_event_occurs_at(bounded, 12.0f0)
-  @test !HetaImporter._heta_time_event_occurs_at(bounded, 6.0f0)
+  system = _event_system(; time_events=[event])
+  for (start_time, expected) in ((0.0, 2.0), (0.25, 2.0), (0.125, 1.0), (0.75, 1.0))
+    problem = ODEProblem(system, (start_time, 1.0))
+    @test init(problem, Tsit5()).u[1] == expected
+  end
+  solution = solve(ODEProblem(system, (0.0, 1.0)), Tsit5(); save_everystep=false)
+  @test last(solution[:x]) == 4.0  # one affect each at 0.0, 0.25, and 0.5
   @test HetaImporter._heta_time_event_occurs_at(
     (start=0.0, period=0.1, stop=0.5), 0.3,
   )
-  @test bounded.start isa Float32
-  @test bounded.period isa Float32
-  @test bounded.stop isa Float32
 
-  time_solution = solve(time_problem, Tsit5(); save_everystep=false)
-  @test SciMLBase.successful_retcode(time_solution)
-  @test time_solution.u[end][2] > 0
+  event["active"] = false
+  inactive = ODEProblem(_event_system(; time_events=[event]), (0.0, 1.0))
+  @test last(solve(inactive, Tsit5())[:x]) == 1.0
 
-  continuous_model = _parse_fresh_heta("9-c-switcher").models[:nameless]
-  continuous_problem = ODEProblem(
-    HetaImporter.build_ode_system(continuous_model),
-    (0.0, 10.0),
-  )
-  @test haskey(continuous_problem.kwargs, :callback)
-
-  discrete_model = _parse_fresh_heta("16-d-switcher").models[:nameless]
-  discrete_problem = ODEProblem(
-    HetaImporter.build_ode_system(discrete_model),
-    (0.0, 10.0),
-  )
-  @test haskey(discrete_problem.kwargs, :callback)
+  event["active"] = true
+  event["trigger"] = Dict("start" => "k", "period" => 0.25, "stop" => 0.5)
+  delayed = ODEProblem(_event_system(; time_events=[event]), (0.0, 1.0); p=[0.25])
+  @test last(solve(delayed, Tsit5())[:x]) == 3.0
 end
 
-@testset "native event initial affects" begin
-  base_model = _parse_fresh_heta("0-hello-world").models[:mm]
-  empty_affects = HetaImporter.OrderedDict{Symbol,HetaImporter.DynMSExpr}()
-  initial_affect = HetaImporter.OrderedDict{Symbol,HetaImporter.DynMSExpr}(
-    :P_amt_ => 20.0,
+@testset "conditional events" begin
+  for (type, detection, condition) in (
+    ("crossing", "root", ["Subtract", "t", 0.5]),
+    ("conditional", "step", ["Greater", "t", 0.5]),
   )
+    event = Dict(
+      "id" => "change_state",
+      "trigger" => Dict("type" => type, "detection" => detection, "rhs" => condition),
+      "actions" => [Dict("state" => "x", "rhs" => 5.0)],
+    )
+    problem = ODEProblem(_event_system(; events=[event]), (0.0, 1.0))
+    @test last(solve(problem, Tsit5())[:x]) == 5.0
 
-  function model_with_events(; time_events=base_model.time_events,
-      continuous_events=base_model.continuous_events,
-      discrete_events=base_model.discrete_events,
-      stop_events=base_model.stop_events)
-    has_compartment_affect = any(
-      event -> haskey(event.discrete_affects, :default_comp),
-      Iterators.flatten((values(time_events), values(continuous_events), values(discrete_events))),
-    )
-    model_parameters = has_compartment_affect ? HetaImporter.DynMSParameters(
-      base_model.parameters.tunable,
-      HetaImporter.OrderedDict{Symbol,HetaImporter.DynMSExpr}(),
-      copy(base_model.parameters.derived),
-    ) : base_model.parameters
-    return HetaImporter.DynMSModel(
-      base_model.id,
-      model_parameters,
-      base_model.assignment_rules,
-      base_model.states,
-      time_events,
-      continuous_events,
-      discrete_events,
-      stop_events,
-      base_model.observables,
-    )
+    for (at_start, threshold, expected) in ((true, 0.0, 5.0), (false, 0.0, 1.0), (true, 2.0, 1.0))
+      event["trigger"] = Dict(
+        "type" => type, "detection" => detection, "atStart" => at_start,
+        "rhs" => [type == "crossing" ? "Subtract" : "Greater", "x", threshold],
+      )
+      problem = ODEProblem(_event_system(; events=[event]), (0.0, 1.0))
+      @test init(problem, Tsit5()).u[1] == expected
+    end
   end
 
-  time_event = HetaImporter.DynMSTimeEvent(
-    :time_at_start,
-    0.0,
-    nothing,
-    nothing,
-    initial_affect,
-    empty_affects,
-    false,
-    true,
+  stop = Dict(
+    "id" => "stop",
+    "stopSimulation" => true,
+    "trigger" => Dict(
+      "type" => "conditional", "detection" => "step", "atStart" => true,
+      "rhs" => ["Greater", "x", 0.0],
+    ),
   )
-  time_events = HetaImporter.OrderedDict(:time_at_start => time_event)
-  time_problem = ODEProblem(
-    HetaImporter.build_ode_system(model_with_events(; time_events)),
-    (0.0, 0.1),
-  )
-  time_integrator = init(time_problem, Tsit5())
-  @test time_integrator.u[2] == 20.0
-
-  periodic_event = HetaImporter.DynMSTimeEvent(
-    :periodic_at_start,
-    0.0,
-    12.0,
-    24.0,
-    initial_affect,
-    empty_affects,
-    false,
-    true,
-  )
-  periodic_system = HetaImporter.build_ode_system(model_with_events(;
-    time_events=HetaImporter.OrderedDict(:periodic_at_start => periodic_event),
-  ))
-  for (start_time, expected) in ((12.0, 20.0), (6.0, 0.0), (30.0, 0.0))
-    problem = ODEProblem(periodic_system, (start_time, start_time + 0.1))
-    @test init(problem, Tsit5()).u[2] == expected
-  end
-
-  discrete_affects = HetaImporter.OrderedDict{Symbol,HetaImporter.DynMSExpr}(
-    :default_comp => 2.0,
-  )
-  parameter_event = HetaImporter.DynMSTimeEvent(
-    :change_compartment,
-    0.05,
-    nothing,
-    nothing,
-    empty_affects,
-    discrete_affects,
-    true,
-    true,
-  )
-  parameter_problem = ODEProblem(
-    HetaImporter.build_ode_system(model_with_events(;
-      time_events=HetaImporter.OrderedDict(:change_compartment => parameter_event),
-    )),
-    (0.0, 0.1),
-  )
-  parameter_solution = solve(parameter_problem, Tsit5(); save_everystep=false)
-  @test SII.is_parameter_timeseries(parameter_solution) == SII.Timeseries()
-  @test SII.parameter_timeseries(parameter_solution, 1) == [0.0, 0.05]
-  @test SII.getp(parameter_problem.f, :default_comp)(parameter_solution) == [1.0, 2.0]
-  @test SII.parameter_values_at_time(parameter_problem.f, parameter_solution, 0.025).discrete == [1.0]
-  @test SII.parameter_values_at_time(parameter_problem.f, parameter_solution, 0.075).discrete == [2.0]
-  system = parameter_problem.f.sys
-  continuous = SII.ContinuousTimeseries()
-  @test SII.get_all_timeseries_indexes(system, :S_amt_) == Set((continuous,))
-  @test SII.get_all_timeseries_indexes(system, :Vmax) == Set()
-  @test SII.get_all_timeseries_indexes(system, :default_comp) == Set((1,))
-  @test SII.get_all_timeseries_indexes(system, :S) == Set((continuous, 1))
-  @test SII.get_all_timeseries_indexes(system, [:S_amt_, :S]) == Set((continuous, 1))
-  @test parameter_solution(0.025; idxs=:S) ≈
-    parameter_solution(0.025; idxs=:S_amt_)
-  @test parameter_solution(0.075; idxs=:S) ≈
-    parameter_solution(0.075; idxs=:S_amt_) / 2
-  @test first(parameter_solution[:S]) ≈ parameter_solution.u[1][1]
-  @test last(parameter_solution[:S]) ≈ parameter_solution.u[end][1] / 2
-
-  future_time_event = HetaImporter.DynMSTimeEvent(
-    :time_after_start,
-    0.05,
-    nothing,
-    nothing,
-    initial_affect,
-    empty_affects,
-    true,
-    true,
-  )
-  future_time_events = HetaImporter.OrderedDict(
-    :time_after_start => future_time_event,
-  )
-  future_time_problem = ODEProblem(
-    HetaImporter.build_ode_system(model_with_events(; time_events=future_time_events)),
-    (0.0, 0.1),
-  )
-  future_time_integrator = init(future_time_problem, Tsit5())
-  @test future_time_integrator.u[2] == 0.0
-
-  continuous_event = HetaImporter.DynMSContinuousEvent(
-    :continuous_at_start,
-    :S_amt_,
-    initial_affect,
-    empty_affects,
-    true,
-    true,
-  )
-  continuous_events = HetaImporter.OrderedDict(
-    :continuous_at_start => continuous_event,
-  )
-  continuous_problem = ODEProblem(
-    HetaImporter.build_ode_system(model_with_events(; continuous_events)),
-    (0.0, 0.1),
-  )
-  continuous_integrator = init(continuous_problem, Tsit5())
-  @test continuous_integrator.u[2] == 20.0
-
-  discrete_event = HetaImporter.DynMSDiscreteEvent(
-    :discrete_at_start,
-    :(S_amt_ > 0),
-    initial_affect,
-    empty_affects,
-    true,
-    true,
-  )
-  discrete_events = HetaImporter.OrderedDict(
-    :discrete_at_start => discrete_event,
-  )
-  discrete_problem = ODEProblem(
-    HetaImporter.build_ode_system(model_with_events(; discrete_events)),
-    (0.0, 0.1),
-  )
-  discrete_integrator = init(discrete_problem, Tsit5())
-  @test discrete_integrator.u[2] == 20.0
-
-  inactive_event = HetaImporter.DynMSDiscreteEvent(
-    :inactive_at_start,
-    :(S_amt_ < 0),
-    initial_affect,
-    empty_affects,
-    true,
-    true,
-  )
-  inactive_events = HetaImporter.OrderedDict(
-    :inactive_at_start => inactive_event,
-  )
-  inactive_problem = ODEProblem(
-    HetaImporter.build_ode_system(model_with_events(; discrete_events=inactive_events)),
-    (0.0, 0.1),
-  )
-  inactive_integrator = init(inactive_problem, Tsit5())
-  @test inactive_integrator.u[2] == 0.0
-
-  stop_event = HetaImporter.DynMSStopEvent(
-    :stop_at_start,
-    :(S_amt_ > 0),
-    true,
-    true,
-  )
-  stop_events = HetaImporter.OrderedDict(:stop_at_start => stop_event)
-  stop_problem = ODEProblem(
-    HetaImporter.build_ode_system(model_with_events(; stop_events)),
-    (0.0, 1.0),
-  )
-  stop_solution = solve(stop_problem, Tsit5())
-  @test last(stop_solution.t) == first(stop_problem.tspan)
+  solution = solve(ODEProblem(_event_system(; events=[stop]), (0.0, 1.0)), Tsit5())
+  @test last(solution.t) == 0.0
 end

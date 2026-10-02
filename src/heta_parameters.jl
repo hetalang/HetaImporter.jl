@@ -80,6 +80,7 @@ function Base.setindex!(p::HetaParameters, value, i::Integer)
 end
 
 SII.parameter_values(p::HetaParameters) = p
+SII.parameter_values(p::HetaParameters, i::Integer) = p[i]
 
 SciMLStructures.isscimlstructure(::HetaParameters) = true
 SciMLStructures.ismutablescimlstructure(::HetaParameters) = true
