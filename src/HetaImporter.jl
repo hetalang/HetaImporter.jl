@@ -41,12 +41,9 @@ include("heta_system.jl")
 include("heta_system_codegen.jl")
 include("heta_system_runtime.jl")
 
-# Heta API 
 export heta_version, heta_help, heta_init, heta_build
-
-export build_dynms_file, build_julia_file
 export import_heta, import_heta_all
-export HetaODESystem, HetaParameters, build_ode_system
+export HetaODESystem, HetaParameters
 export getp
 export write_generated_code
 export equations, initial_conditions, parameters, observed, events

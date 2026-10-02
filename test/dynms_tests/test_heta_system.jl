@@ -49,7 +49,7 @@ end
 @testset "native HetaODESystem lowering" begin
   spec = _parse_fresh_heta("0-hello-world")
   model = spec.models[:mm]
-  system = build_ode_system(model)
+  system = HetaImporter.build_ode_system(model)
 
   @test system isa HetaODESystem
   @test system.name == :mm
@@ -83,7 +83,7 @@ end
     model.stop_events,
     model.observables,
   )
-  algebraic_mass_matrix = build_ode_system(algebraic_model).generated_code.mass_matrix
+  algebraic_mass_matrix = HetaImporter.build_ode_system(algebraic_model).generated_code.mass_matrix
   @test HetaImporter.has_algebraic(algebraic_model)
   @test algebraic_mass_matrix isa Diagonal{Float64}
   @test diag(algebraic_mass_matrix)[1] == 0.0
@@ -133,7 +133,7 @@ end
 
   mktempdir() do directory
     filename = joinpath(directory, "mm_heta_system.jl")
-    written = build_ode_system(model; write_to_file=true, filename)
+    written = HetaImporter.build_ode_system(model; write_to_file=true, filename)
     @test written isa HetaODESystem
     @test isfile(filename)
 
@@ -143,7 +143,7 @@ end
   end
 
   time_model = _parse_fresh_heta("11-time-switcher").models[:nameless]
-  time_system = build_ode_system(time_model)
+  time_system = HetaImporter.build_ode_system(time_model)
   time_display = sprint(show, MIME"text/plain"(), time_system)
   @test occursin("Events:     2 (2 time", time_display)
   @test length(time_system.generated_code.time_events) ==
@@ -159,7 +159,7 @@ end
   end
 
   discrete_model = _parse_fresh_heta("16-d-switcher").models[:nameless]
-  discrete_system = build_ode_system(discrete_model)
+  discrete_system = HetaImporter.build_ode_system(discrete_model)
   @test !isempty(discrete_system.generated_code.discrete_events)
   @test all(
     event -> event.condition_func isa HetaImporter.DynMSJuliaFunction,

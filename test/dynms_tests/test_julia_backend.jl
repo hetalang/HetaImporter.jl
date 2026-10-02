@@ -16,7 +16,7 @@ end
 
 @testset "HetaODESystem ODEProblem interface" begin
   model = _parse_fresh_heta("0-hello-world").models[:mm]
-  problem = ODEProblem(build_ode_system(model), (0.0, 10.0))
+  problem = ODEProblem(HetaImporter.build_ode_system(model), (0.0, 10.0))
   u0 = problem.u0(problem.p, first(problem.tspan))
 
   @test u0 == [10.0, 0.0]
@@ -103,7 +103,7 @@ end
     model.time_events, model.continuous_events, model.discrete_events,
     model.stop_events, model.observables,
   )
-  dependent_problem = ODEProblem(build_ode_system(dependent_model), (0.0, 1.0))
+  dependent_problem = ODEProblem(HetaImporter.build_ode_system(dependent_model), (0.0, 1.0))
   @test dependent_problem.p.derived == [0.2]
   dependent_rebuilt = SciMLStructures.replace(
     SciMLStructures.Tunable(), dependent_problem.p, BigFloat[0.4, 2.5],
@@ -127,7 +127,7 @@ end
   @test restored.derived == [8.0]
 
   time_model = _parse_fresh_heta("11-time-switcher").models[:nameless]
-  time_problem = ODEProblem(build_ode_system(time_model), (0.0, 50.0))
+  time_problem = ODEProblem(HetaImporter.build_ode_system(time_model), (0.0, 50.0))
   @test haskey(time_problem.kwargs, :callback)
   @test !haskey(time_problem.kwargs, :tstops)
 
@@ -187,14 +187,14 @@ end
 
   continuous_model = _parse_fresh_heta("9-c-switcher").models[:nameless]
   continuous_problem = ODEProblem(
-    build_ode_system(continuous_model),
+    HetaImporter.build_ode_system(continuous_model),
     (0.0, 10.0),
   )
   @test haskey(continuous_problem.kwargs, :callback)
 
   discrete_model = _parse_fresh_heta("16-d-switcher").models[:nameless]
   discrete_problem = ODEProblem(
-    build_ode_system(discrete_model),
+    HetaImporter.build_ode_system(discrete_model),
     (0.0, 10.0),
   )
   @test haskey(discrete_problem.kwargs, :callback)
@@ -245,7 +245,7 @@ end
   )
   time_events = HetaImporter.OrderedDict(:time_at_start => time_event)
   time_problem = ODEProblem(
-    build_ode_system(model_with_events(; time_events)),
+    HetaImporter.build_ode_system(model_with_events(; time_events)),
     (0.0, 0.1),
   )
   time_integrator = init(time_problem, Tsit5())
@@ -261,7 +261,7 @@ end
     false,
     true,
   )
-  periodic_system = build_ode_system(model_with_events(;
+  periodic_system = HetaImporter.build_ode_system(model_with_events(;
     time_events=HetaImporter.OrderedDict(:periodic_at_start => periodic_event),
   ))
   for (start_time, expected) in ((12.0, 20.0), (6.0, 0.0), (30.0, 0.0))
@@ -283,7 +283,7 @@ end
     true,
   )
   parameter_problem = ODEProblem(
-    build_ode_system(model_with_events(;
+    HetaImporter.build_ode_system(model_with_events(;
       time_events=HetaImporter.OrderedDict(:change_compartment => parameter_event),
     )),
     (0.0, 0.1),
@@ -322,7 +322,7 @@ end
     :time_after_start => future_time_event,
   )
   future_time_problem = ODEProblem(
-    build_ode_system(model_with_events(; time_events=future_time_events)),
+    HetaImporter.build_ode_system(model_with_events(; time_events=future_time_events)),
     (0.0, 0.1),
   )
   future_time_integrator = init(future_time_problem, Tsit5())
@@ -340,7 +340,7 @@ end
     :continuous_at_start => continuous_event,
   )
   continuous_problem = ODEProblem(
-    build_ode_system(model_with_events(; continuous_events)),
+    HetaImporter.build_ode_system(model_with_events(; continuous_events)),
     (0.0, 0.1),
   )
   continuous_integrator = init(continuous_problem, Tsit5())
@@ -358,7 +358,7 @@ end
     :discrete_at_start => discrete_event,
   )
   discrete_problem = ODEProblem(
-    build_ode_system(model_with_events(; discrete_events)),
+    HetaImporter.build_ode_system(model_with_events(; discrete_events)),
     (0.0, 0.1),
   )
   discrete_integrator = init(discrete_problem, Tsit5())
@@ -376,7 +376,7 @@ end
     :inactive_at_start => inactive_event,
   )
   inactive_problem = ODEProblem(
-    build_ode_system(model_with_events(; discrete_events=inactive_events)),
+    HetaImporter.build_ode_system(model_with_events(; discrete_events=inactive_events)),
     (0.0, 0.1),
   )
   inactive_integrator = init(inactive_problem, Tsit5())
@@ -390,7 +390,7 @@ end
   )
   stop_events = HetaImporter.OrderedDict(:stop_at_start => stop_event)
   stop_problem = ODEProblem(
-    build_ode_system(model_with_events(; stop_events)),
+    HetaImporter.build_ode_system(model_with_events(; stop_events)),
     (0.0, 1.0),
   )
   stop_solution = solve(stop_problem, Tsit5())

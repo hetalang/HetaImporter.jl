@@ -12,8 +12,8 @@ heta_build
 ## Julia File Generation
 
 ```@docs
-build_dynms_file
-build_julia_file
+HetaImporter.build_dynms_file
+HetaImporter.build_julia_file
 ```
 
 ## Advanced: Heta Parsing
@@ -36,7 +36,7 @@ import_heta
 import_heta_all
 HetaODESystem
 HetaParameters
-build_ode_system
+HetaImporter.build_ode_system
 write_generated_code
 equations
 initial_conditions
