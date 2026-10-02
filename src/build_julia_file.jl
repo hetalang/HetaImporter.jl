@@ -45,16 +45,15 @@ end
 Build a Heta platform and write a Julia source file to
 `joinpath(build_dir, JULIA_MODEL_DIR, JULIA_MODEL_NAME)`.
 
-When `ir_format == :julia`, heta-compiler writes Julia code directly. When
-`ir_format == :dynms`, heta-compiler writes DynMS JSON first; HetaImporter then
-converts that DynMS IR to readable Julia source.
+heta-compiler writes Julia code directly. The only supported `ir_format` is
+`:julia`. To construct a native `HetaODESystem`, use [`import_heta`](@ref).
 
 The returned value is the generated Julia file path. 
 
 Arguments:
 
 - `heta_dir` : path to a Heta source directory containing a platform declaration file
-- `ir_format` : format of the intermediate representation of the model. Default is `:julia`
+- `ir_format` : compiler export format. Only `:julia` is supported.
 - `build_dir` : directory path where generated files are written. Default is `joinpath(heta_dir, "dist")`
 - `spaceFilter` : filter for namespaces in the Heta model. Can be a string, a vector of symbols, or `nothing`. Default is `nothing`
 - kwargs : other arguments supported by `heta_build`
@@ -67,44 +66,19 @@ function build_julia_file(
   spaceFilter::Union{String,Vector{Symbol},Nothing} = nothing,
   kwargs...
 )
+  ir_format === :julia ||
+    throw(ArgumentError("Unsupported IR format: $ir_format. Only :julia is supported."))
+
   build_dir = abspath(build_dir)
-  julia_path = joinpath(build_dir, JULIA_MODEL_DIR, JULIA_MODEL_NAME)
-  return _build_julia_file(heta_dir, julia_path; ir_format, build_dir, spaceFilter, kwargs...)
-end
-
-function _build_julia_file(
-  heta_dir::AbstractString,
-  julia_path::AbstractString;
-  ir_format::Symbol,
-  build_dir::AbstractString,
-  spaceFilter::Union{String,Vector{Symbol},Nothing},
-  kwargs...
-)
-  ir_format in (:julia, :dynms) ||
-    throw(ArgumentError("Unsupported IR format: $ir_format. Supported formats are: :julia, :dynms"))
-
   spaceFilter = _normalize_space_filter(spaceFilter)
-  model_path, export_format = get_model_path_and_export_format(build_dir, spaceFilter, Val(ir_format))
+  julia_path, export_format = get_model_path_and_export_format(build_dir, spaceFilter, Val(:julia))
 
   build_retcode = heta_build(heta_dir; dist_dir=build_dir, export_format, kwargs...)
   build_retcode == 0 ||
     error("heta_build failed while generating $ir_format model from '$heta_dir' with exit code $build_retcode.")
-  isfile(model_path) ||
-    error("heta_build did not generate $ir_format model at '$model_path'.")
-
-  _write_julia_file(model_path, julia_path, Val(ir_format))
+  isfile(julia_path) ||
+    error("heta_build did not generate Julia model at '$julia_path'.")
   return julia_path
-end
-
-function _write_julia_file(model_path::AbstractString, julia_path::AbstractString, ::Val{:julia})
-  dir = dirname(julia_path)
-  !isempty(dir) && mkpath(dir)
-  abspath(model_path) == abspath(julia_path) || cp(model_path, julia_path; force=true)
-  return julia_path
-end
-
-function _write_julia_file(model_path::AbstractString, julia_path::AbstractString, ::Val{:dynms})
-  return write_dynms_julia(model_path, julia_path)
 end
 
 function _normalize_space_filter(spaceFilter::Union{String,Vector{Symbol},Nothing})

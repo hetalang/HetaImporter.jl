@@ -303,8 +303,10 @@ function _heta_next_time(schedule_func, integrator)
   if time < schedule.start
     next_time = schedule.start
   else
+    # Count periods (occurrences) till the next event
     occurrence = floor(Int, (time - schedule.start) / period) + 1
     next_time = schedule.start + occurrence * period
+    # Ensure the next time is not equal to the current time (floating point rounding)
     if next_time <= time
       next_time = schedule.start + (occurrence + 1) * period
     end

@@ -55,9 +55,6 @@ struct DynMSParameters
   tunable::OrderedDict{Symbol,Float64}
   derived::OrderedDict{Symbol,DynMSExpr}
   discrete::OrderedDict{Symbol,DynMSExpr}
-  # TODO: Remove this field when old_format_codegen.jl is removed.
-  # It only preserves the positional layout of legacy static parameters.
-  static_order::Vector{Symbol}
 end
 
 struct DynMSModel
@@ -229,20 +226,17 @@ function _parse_dynms_parameters(model::AbstractDict, event_groups...)
   end
   derived = OrderedDict{Symbol,DynMSExpr}()
   discrete = OrderedDict{Symbol,DynMSExpr}()
-  static_order = Symbol[]
   for state in _dynms_static_defs(model)
     id = Symbol(string(state["id"]))
     initial = _parse_dynms_numeric_expr(
       get(state, "initial", 0.0), "static state '$id' initial value",
     )
-    push!(static_order, id)
     (id in affected ? discrete : derived)[id] = initial
   end
   return DynMSParameters(
     _parse_dynms_tunable(model),
     derived,
     discrete,
-    static_order,
   )
 end
 

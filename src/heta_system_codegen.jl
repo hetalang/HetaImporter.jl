@@ -1,3 +1,7 @@
+function _dynms_function(name::Symbol, args::Vector{Symbol}, statements)
+  return DynMSJuliaFunction(name, args, Expr(:block, statements...))
+end
+
 # similar to MacroTools expression walking
 function _heta_expr_walk!(symbols::Set{Symbol}, value)
   if value isa Symbol 

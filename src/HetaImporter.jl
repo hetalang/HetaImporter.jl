@@ -37,7 +37,6 @@ include("heta_cli.jl")
 include("build_julia_file.jl")
 include("parse_heta.jl")
 include("heta_parameters.jl")
-include("old_format_codegen.jl")
 include("heta_system.jl")
 include("heta_system_codegen.jl")
 include("heta_system_runtime.jl")
@@ -49,7 +48,7 @@ export build_dynms_file, build_julia_file
 export import_heta, import_heta_all
 export HetaODESystem, HetaParameters, build_ode_system
 export getp
-export write_dynms_julia, write_generated_code
+export write_generated_code
 export equations, initial_conditions, parameters, observed, events
 
 end

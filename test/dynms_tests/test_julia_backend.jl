@@ -97,7 +97,6 @@ end
   dependent_derived[:default_comp] = :(2 * Vmax)
   dependent_parameters = HetaImporter.DynMSParameters(
     model.parameters.tunable, dependent_derived, model.parameters.discrete,
-    model.parameters.static_order,
   )
   dependent_model = HetaImporter.DynMSModel(
     model.id, dependent_parameters, model.assignment_rules, model.states,
@@ -220,7 +219,6 @@ end
       base_model.parameters.tunable,
       HetaImporter.OrderedDict{Symbol,HetaImporter.DynMSExpr}(),
       copy(base_model.parameters.derived),
-      base_model.parameters.static_order,
     ) : base_model.parameters
     return HetaImporter.DynMSModel(
       base_model.id,
