@@ -5,6 +5,7 @@ function Base.getproperty(system::HetaODESystem, symbol::Symbol)
   dynms = getfield(system, :dynms)
   if symbol === :t || haskey(dynms.states, symbol) ||
       haskey(dynms.parameters.tunable, symbol) ||
+      haskey(dynms.parameters.derived, symbol) ||
       haskey(dynms.parameters.discrete, symbol) ||
       haskey(dynms.assignment_rules, symbol)
     # SciMLBase uses `getproperty(fn.sys, sym)` to translate Symbol queries
@@ -29,9 +30,10 @@ function initial_conditions(system::HetaODESystem)
   )
 end
 
-"""Return the tunable defaults and discrete initialization expressions."""
+"""Return the tunable defaults and derived/discrete initialization expressions."""
 parameters(system::HetaODESystem) = (
   tunable=copy(system.dynms.parameters.tunable),
+  derived=copy(system.dynms.parameters.derived),
   discrete=copy(system.dynms.parameters.discrete),
 )
 
@@ -54,6 +56,7 @@ SII.is_parameter(system::HetaODESystem, symbol) = haskey(system.parameter_index,
 SII.parameter_index(system::HetaODESystem, symbol) = get(system.parameter_index, symbol, nothing)
 SII.parameter_symbols(system::HetaODESystem) = vcat(
   collect(keys(system.dynms.parameters.tunable)),
+  collect(keys(system.dynms.parameters.derived)),
   collect(keys(system.dynms.parameters.discrete)),
 )
 
@@ -64,6 +67,69 @@ function SII.timeseries_parameter_index(system::HetaODESystem, symbol)
   return isnothing(index) ? nothing : SII.ParameterTimeseriesIndex(1, index)
 end
 
+function _heta_depends_on_discrete(system::HetaODESystem, symbol::Symbol, visited)
+  haskey(system.discrete_index, symbol) && return true
+  symbol in visited && return false
+  rhs = get(system.dynms.assignment_rules, symbol, nothing)
+  rhs === nothing && return false
+  push!(visited, symbol)
+  dependencies = _heta_expr_walk!(Set{Symbol}(), rhs)
+  return any(dependency ->
+    _heta_depends_on_discrete(system, dependency, visited), dependencies)
+end
+
+function SII.get_all_timeseries_indexes(system::HetaODESystem, symbol)
+  symbol isa QuoteNode && return SII.get_all_timeseries_indexes(system, symbol.value)
+  if symbol isa Union{Tuple,AbstractArray}
+    return mapreduce(
+      item -> SII.get_all_timeseries_indexes(system, item),
+      union,
+      symbol;
+      init=Set{Any}(),
+    )
+  elseif symbol isa Symbol
+    if haskey(system.state_index, symbol) || symbol === :t
+      return Set{Any}((SII.ContinuousTimeseries(),))
+    elseif haskey(system.discrete_index, symbol)
+      return Set{Any}((1,))
+    elseif haskey(system.dynms.assignment_rules, symbol)
+      indexes = Set{Any}((SII.ContinuousTimeseries(),))
+      _heta_depends_on_discrete(system, symbol, Set{Symbol}()) && push!(indexes, 1)
+      return indexes
+    end
+  end
+  return Set{Any}()
+end
+
+function SciMLBase.create_parameter_timeseries_collection(
+  ::HetaODESystem, p::HetaParameters, tspan,
+)
+  isempty(p.discrete) && return nothing
+  values = [copy(p.discrete)]
+  times = [first(tspan)]
+  buffer = SciMLBase.DiffEqArray(values, times)
+  return SII.ParameterTimeseriesCollection((buffer,), copy(p))
+end
+
+function SciMLBase.get_saveable_values(
+  ::HetaODESystem, p::HetaParameters, timeseries_idx,
+)
+  timeseries_idx == 1 || return nothing
+  return copy(p.discrete)
+end
+
+function SII.with_updated_parameter_timeseries_values(
+  ::HetaODESystem, p::HetaParameters, updates::Pair...,
+)
+  for (timeseries_idx, values) in updates
+    timeseries_idx == 1 || throw(ArgumentError(
+      "Unknown Heta parameter timeseries index: $timeseries_idx",
+    ))
+    copyto!(p.discrete, values)
+  end
+  return p
+end
+
 SII.is_independent_variable(::HetaODESystem, symbol) = symbol === :t
 SII.independent_variable_symbols(::HetaODESystem) = [:t]
 SII.is_time_dependent(::HetaODESystem) = true
@@ -72,6 +138,7 @@ SII.constant_structure(::HetaODESystem) = true
 function SII.default_values(system::HetaODESystem)
   defaults = Dict{Symbol,Any}()
   merge!(defaults, system.dynms.parameters.tunable)
+  merge!(defaults, system.dynms.parameters.derived)
   merge!(defaults, system.dynms.parameters.discrete)
   for (id, state) in system.dynms.states
     defaults[id] = state.initial
@@ -91,11 +158,10 @@ SII.all_symbols(system::HetaODESystem) = vcat(
 
 function SII.is_observed(system::HetaODESystem, symbol)
   symbol isa QuoteNode && return SII.is_observed(system, symbol.value)
-  symbol isa Expr && return true
   symbol isa Symbol && return haskey(system.dynms.assignment_rules, symbol)
   symbol isa Union{Tuple,AbstractArray} || return false
   return all(item ->
-    SII.is_variable(system, item) || SII.is_parameter(system, item) ||
+    SII.is_variable(system, item) ||
     SII.is_observed(system, item), symbol)
 end
 SII.supports_tuple_observed(::HetaODESystem) = true
@@ -106,14 +172,10 @@ function _heta_observed_result(system::HetaODESystem, symbol, roots)
     if haskey(system.dynms.assignment_rules, symbol)
       push!(roots, symbol)
       return symbol
-    elseif haskey(system.state_index, symbol) || haskey(system.parameter_index, symbol) ||
-        symbol === :t
+    elseif haskey(system.state_index, symbol)
       return symbol
     end
     throw(ArgumentError("Unknown symbol in HetaODESystem $(system.name): $symbol"))
-  elseif symbol isa Expr
-    push!(roots, symbol)
-    return symbol
   elseif symbol isa Tuple
     return Expr(:tuple, (_heta_observed_result(system, item, roots) for item in symbol)...)
   elseif symbol isa AbstractArray
@@ -155,11 +217,12 @@ function _heta_observed_interface(system::HetaODESystem)
   cache = Dict{Any,Any}()
   function lookup(symbol)
     key = symbol isa AbstractArray ? (:array, Tuple(symbol)) : symbol
+    # Return the cached function if the key is present.
+    # Otherwise, call SII.observed to build the function, store it, and return it
     return get!(cache, key) do
       SII.observed(system, symbol)
     end
   end
-  observed(symbol) = lookup(symbol)
   observed(symbol, u, p, t) = lookup(symbol)(u, p, t)
   return observed
 end
@@ -170,13 +233,14 @@ function _heta_parameters(system::HetaODESystem, tunable::AbstractVector)
     "Expected $expected tunable parameters for HetaODESystem $(system.name), " *
     "got $(length(tunable)).",
   ))
-  initialize_discrete! = _heta_runtime_function(
-    system.generated_code.initialize_discrete_func,
+  initialize_parameters! = _heta_runtime_function(
+    system.generated_code.initialize_parameters_func,
   )
   return HetaParameters(
     tunable,
+    length(system.dynms.parameters.derived),
     length(system.dynms.parameters.discrete),
-    initialize_discrete!,
+    initialize_parameters!,
   )
 end
 
@@ -215,7 +279,8 @@ function _heta_time_event_occurs_at(schedule, time)
   period > zero(period) || throw(ArgumentError(
     "Time-event period must be positive, got $period.",
   ))
-  return isinteger((time - schedule.start) / period)
+  range_stop = isnothing(schedule.stop) ? time : schedule.stop
+  return time in (schedule.start:period:range_stop)
 end
 
 function _heta_next_time(schedule_func, integrator)
@@ -266,16 +331,12 @@ function _heta_event_initialize(
   end
 end
 
-function _heta_time_event_initialize(schedule_func, affect!, initial_affect)
-  return function (callback, u, t, integrator)
-    schedule = _heta_time_event_schedule(schedule_func, integrator)
-    if initial_affect && _heta_time_event_occurs_at(schedule, t)
-      affect!(integrator)
-      SciMLBase.derivative_discontinuity!(integrator, true)
-    else
-      SciMLBase.derivative_discontinuity!(integrator, false)
-    end
-    return nothing
+# if saves_discrete is true applies affect and saves the discrete state
+function _heta_event_affect(affect!, saves_discrete)
+  saves_discrete || return affect!
+  return function (integrator)
+    affect!(integrator)
+    SciMLBase.save_discretes!(integrator, 1)
   end
 end
 
@@ -283,16 +344,21 @@ function _heta_callbacks(system::HetaODESystem, tspan)
   code = system.generated_code
   callbacks = Any[]
 
-  for event in values(code.time_events)
+  for (id, event) in code.time_events
     schedule_func = _heta_runtime_function(event.schedule_func)
-    affect! = _heta_runtime_function(event.affect_func)
+    affect! = _heta_event_affect(
+      _heta_runtime_function(event.affect_func),
+      !isempty(system.dynms.time_events[id].discrete_affects),
+    )
     time_choice = integrator -> _heta_next_time(schedule_func, integrator)
     time_type = promote_type(typeof(first(tspan)), typeof(last(tspan)))
-    initialize = _heta_time_event_initialize(
-      schedule_func,
-      affect!,
-      event.initial_affect,
-    )
+    initialize = function (callback, u, t, integrator)
+      schedule = _heta_time_event_schedule(schedule_func, integrator)
+      occurs_at_start = _heta_time_event_occurs_at(schedule, t)
+      occurs_at_start && affect!(integrator)
+      SciMLBase.derivative_discontinuity!(integrator, occurs_at_start)
+      return nothing
+    end
     push!(callbacks, DiffEqCallbacks.IterativeCallback(
       time_choice,
       affect!,
@@ -302,20 +368,28 @@ function _heta_callbacks(system::HetaODESystem, tspan)
     ))
   end
 
-  for event in values(code.continuous_events)
+  for (id, event) in code.continuous_events
+    # Initial affect is applied if event.initial_affect is true and condition is nonnegative at the initial time
     initialize = _heta_event_initialize(event.initial_affect, value -> value >= zero(value))
     push!(callbacks, SciMLBase.ContinuousCallback(
       _heta_runtime_function(event.condition_func),
-      _heta_runtime_function(event.affect_func),
+      _heta_event_affect(
+        _heta_runtime_function(event.affect_func),
+        !isempty(system.dynms.continuous_events[id].discrete_affects),
+      ),
       ; initialize,
     ))
   end
 
-  for event in values(code.discrete_events)
+  for (id, event) in code.discrete_events
+    # Initial affect is applied if event.initial_affect is true and condition is satisfied at the initial time
     initialize = _heta_event_initialize(event.initial_affect, identity)
     push!(callbacks, SciMLBase.DiscreteCallback(
       _heta_runtime_function(event.condition_func),
-      _heta_runtime_function(event.affect_func),
+      _heta_event_affect(
+        _heta_runtime_function(event.affect_func),
+        !isempty(system.dynms.discrete_events[id].discrete_affects),
+      ),
       ; initialize,
     ))
   end

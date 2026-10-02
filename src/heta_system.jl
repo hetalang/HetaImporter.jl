@@ -5,8 +5,8 @@ Native Julia representation of a parsed Heta ODE model. `dynms` retains the
 semantic model for inspection and `generated_code` contains the fixed,
 uncompiled Julia functions generated once by [`build_ode_system`](@ref).
 
-`parameter_index` indexes the complete flattened parameter container (tunables
-followed by discretes). `discrete_index` indexes only the discrete portion and
+`parameter_index` indexes the complete flattened parameter container (tunables,
+derived, then discretes). `discrete_index` indexes only the discrete portion and
 is also used as its parameter-timeseries index.
 """
 struct HetaODESystem{GC}
@@ -28,6 +28,7 @@ function Base.show(io::IO, ::MIME"text/plain", system::HetaODESystem)
   dynms = system.dynms
   code = system.generated_code
   n_tunable = length(dynms.parameters.tunable)
+  n_derived = length(dynms.parameters.derived)
   n_discrete = length(dynms.parameters.discrete)
   n_time = length(code.time_events)
   n_continuous = length(code.continuous_events)
@@ -37,8 +38,9 @@ function Base.show(io::IO, ::MIME"text/plain", system::HetaODESystem)
 
   println(io, "HetaODESystem `$(system.name)`")
   println(io, "  States:     ", length(dynms.states))
-  println(io, "  Parameters: ", n_tunable + n_discrete,
-    " (", n_tunable, " tunable, ", n_discrete, " discrete)")
+  println(io, "  Parameters: ", n_tunable + n_derived + n_discrete,
+    " (", n_tunable, " tunable, ", n_derived, " derived, ",
+    n_discrete, " discrete)")
   println(io, "  Observed:   ", length(dynms.assignment_rules))
   print(io, "  Events:     ", n_events,
     " (", n_time, " time, ", n_continuous, " continuous, ",

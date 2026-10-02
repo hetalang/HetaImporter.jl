@@ -4,7 +4,8 @@
 
   @test collect(keys(model.parameters.tunable)) == [:k1]
   @test collect(keys(model.states)) == [:x1_amt_, :x2_amt_]
-  @test collect(keys(model.parameters.discrete)) == [:comp1, :p1, :x3_amt_]
+  @test collect(keys(model.parameters.derived)) == [:comp1, :x3_amt_]
+  @test collect(keys(model.parameters.discrete)) == [:p1]
   @test collect(keys(model.assignment_rules)) == [:x2, :x1, :r1, :x3, :cond1]
   @test model.observables == [:x1, :x2, :p1, :x3]
 

@@ -8,8 +8,9 @@
   @test model.id == :mm
   @test collect(keys(model.parameters.tunable)) == [:Vmax, :Km]
   @test collect(values(model.parameters.tunable)) == [0.1, 2.5]
-  @test collect(keys(model.parameters.discrete)) == [:default_comp]
-  @test model.parameters.discrete[:default_comp] == 1.0
+  @test collect(keys(model.parameters.derived)) == [:default_comp]
+  @test isempty(model.parameters.discrete)
+  @test model.parameters.derived[:default_comp] == 1.0
   @test collect(keys(model.assignment_rules)) == [:P, :S, :r1]
   @test collect(keys(model.states)) == [:S_amt_, :P_amt_]
   @test model.states[:S_amt_].initial == :(10.0 * 1.0)

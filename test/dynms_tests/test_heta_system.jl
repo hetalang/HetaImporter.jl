@@ -57,7 +57,7 @@ end
   system_display = sprint(show, MIME"text/plain"(), system)
   @test occursin("HetaODESystem `mm`", system_display)
   @test occursin("States:     2", system_display)
-  @test occursin("Parameters: 3 (2 tunable, 1 discrete)", system_display)
+  @test occursin("Parameters: 3 (2 tunable, 1 derived, 0 discrete)", system_display)
   @test occursin("Observed:   3", system_display)
   @test occursin("Events:     0", system_display)
   @test !occursin("generated_code", system_display)
@@ -90,11 +90,11 @@ end
   @test system.dynms === model
   @test system.state_index == Dict(:S_amt_ => 1, :P_amt_ => 2)
   @test system.parameter_index == Dict(:Vmax => 1, :Km => 2, :default_comp => 3)
-  @test system.discrete_index == Dict(:default_comp => 1)
+  @test isempty(system.discrete_index)
   @test SII.variable_symbols(system) == [:S_amt_, :P_amt_]
   @test SII.parameter_symbols(system) == [:Vmax, :Km, :default_comp]
   @test system.generated_code.ode_func isa HetaImporter.DynMSJuliaFunction
-  @test system.generated_code.initialize_discrete_func isa
+  @test system.generated_code.initialize_parameters_func isa
     HetaImporter.DynMSJuliaFunction
   @test system.generated_code.u0_func isa HetaImporter.DynMSJuliaFunction
   @test :assignment_dependencies ∉ fieldnames(typeof(system))
@@ -102,6 +102,7 @@ end
   @test equations(system)[:S_amt_] == model.states[:S_amt_].equation
   @test initial_conditions(system)[:S_amt_] == model.states[:S_amt_].initial
   @test parameters(system).tunable == model.parameters.tunable
+  @test parameters(system).derived == model.parameters.derived
 
   problem = ODEProblem(system, (0.0, 10.0))
   u0 = problem.u0(problem.p, 0.0)
@@ -117,7 +118,8 @@ end
   custom_problem = ODEProblem(system, (0.0, 10.0); p=tunable)
   @test custom_problem.p isa HetaParameters
   @test custom_problem.p.tunable === tunable
-  @test custom_problem.p.discrete == [1.0]
+  @test custom_problem.p.derived == [1.0]
+  @test isempty(custom_problem.p.discrete)
   @test ODEProblem(system, (0.0, 10.0); p=nothing).p.tunable == [0.1, 2.5]
   @test ODEProblem(
     system,

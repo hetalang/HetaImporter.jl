@@ -4,7 +4,8 @@
 
   @test collect(keys(model.parameters.tunable)) == [:kabs, :kel, :sw2_start]
   @test collect(keys(model.states)) == [:a0, :s1_amt_]
-  @test collect(keys(model.parameters.discrete)) == [:s2_amt_, :comp0, :comp1]
+  @test collect(keys(model.parameters.derived)) == [:comp0]
+  @test collect(keys(model.parameters.discrete)) == [:s2_amt_, :comp1]
   @test model.observables == [:s1, :s2, :comp0, :comp1]
 
   @test collect(keys(model.time_events)) == [:sw0, :sw1, :sw2]

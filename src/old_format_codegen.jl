@@ -37,7 +37,7 @@ end
 
 function _dynms_model_code(dynms::DynMSModel)
   constants_num = NamedTuple(dynms.parameters.tunable)
-  statics_id = Tuple(keys(dynms.parameters.discrete))
+  statics_id = Tuple(dynms.parameters.static_order)
   output_ids = _dynms_output_ids(dynms)
   record_ids = _dynms_record_ids(dynms, output_ids)
   default_observables = Set(dynms.observables)
@@ -64,7 +64,7 @@ end
 
 function _dynms_output_ids(dynms::DynMSModel)
   ids = Symbol[]
-  append!(ids, keys(dynms.parameters.discrete))
+  append!(ids, dynms.parameters.static_order)
   append!(ids, keys(dynms.assignment_rules))
   append!(ids, keys(dynms.states))
   return unique(ids)
@@ -292,6 +292,9 @@ function _dynms_init_function(dynms::DynMSModel)
   for (id, state) in dynms.states
     push!(stmts, Expr(:(=), id, state.initial))
   end
+  for (id, static_initial) in dynms.parameters.derived
+    push!(stmts, Expr(:(=), id, static_initial))
+  end
   for (id, static_initial) in dynms.parameters.discrete
     push!(stmts, Expr(:(=), id, static_initial))
   end
@@ -299,7 +302,7 @@ function _dynms_init_function(dynms::DynMSModel)
   for (i, id) in enumerate(keys(dynms.states))
     push!(stmts, :(__u0__[$i] = $id))
   end
-  for (i, id) in enumerate(keys(dynms.parameters.discrete))
+  for (i, id) in enumerate(dynms.parameters.static_order)
     push!(stmts, :(__p0__[$i] = $id))
   end
 
@@ -359,7 +362,7 @@ function _dynms_affect_function(dynms::DynMSModel, event)
   _add_dynms_assignment_bindings!(stmts, dynms)
 
   state_index = Dict(id => i for (i, id) in enumerate(keys(dynms.states)))
-  static_index = Dict(id => i for (i, id) in enumerate(keys(dynms.parameters.discrete)))
+  static_index = Dict(id => i for (i, id) in enumerate(dynms.parameters.static_order))
 
   for (id, rhs_expr) in event.state_affects
     idx = state_index[id]
@@ -382,11 +385,12 @@ _add_dynms_constant_bindings!(stmts, dynms::DynMSModel) =
   push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.tunable)...)) = __constants__ ))
 
 function _add_dynms_header_bindings!(stmts, dynms::DynMSModel; integrator_p::Bool=false, integrator_u::Bool=false)
+  static_ids = dynms.parameters.static_order
   if integrator_p
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.discrete)...)) = __integrator__.p.x[1] ))
+    push!(stmts, :( $(Expr(:tuple, static_ids...)) = __integrator__.p.x[1] ))
     push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.tunable)...)) = __integrator__.p.x[2] ))
   else
-    push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.discrete)...)) = __p__.x[1] ))
+    push!(stmts, :( $(Expr(:tuple, static_ids...)) = __p__.x[1] ))
     push!(stmts, :( $(Expr(:tuple, keys(dynms.parameters.tunable)...)) = __p__.x[2] ))
   end
   if integrator_u

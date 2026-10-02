@@ -52,6 +52,10 @@ function _heta_index_maps(dynms::DynMSModel)
     parameter_index[id] = i
   end
   offset = length(parameter_index)
+  for (i, id) in enumerate(keys(dynms.parameters.derived))
+    parameter_index[id] = offset + i
+  end
+  offset = length(parameter_index)
   for (i, id) in enumerate(keys(dynms.parameters.discrete))
     parameter_index[id] = offset + i
     discrete_index[id] = i
@@ -68,6 +72,9 @@ end
 
 function _add_heta_parameter_bindings!(statements, dynms::DynMSModel; p=:__p__)
   _add_heta_tunable_bindings!(statements, dynms; p)
+  for (i, id) in enumerate(keys(dynms.parameters.derived))
+    push!(statements, :($id = $p.derived[$i]))
+  end
   for (i, id) in enumerate(keys(dynms.parameters.discrete))
     push!(statements, :($id = $p.discrete[$i]))
   end
@@ -81,10 +88,14 @@ function _add_heta_state_bindings!(statements, dynms::DynMSModel; u=:__u__)
   return statements
 end
 
-function _heta_initialize_discrete_function(dynms::DynMSModel; name=dynms.id)
+function _heta_initialize_parameters_function(dynms::DynMSModel; name=dynms.id)
   statements = []
   for (i, id) in enumerate(keys(dynms.parameters.tunable))
     push!(statements, :($id = __tunable__[$i]))
+  end
+  for (i, (id, initial)) in enumerate(dynms.parameters.derived)
+    push!(statements, Expr(:(=), id, initial))
+    push!(statements, :(__derived__[$i] = $id))
   end
   for (i, (id, initial)) in enumerate(dynms.parameters.discrete)
     push!(statements, Expr(:(=), id, initial))
@@ -92,8 +103,8 @@ function _heta_initialize_discrete_function(dynms::DynMSModel; name=dynms.id)
   end
   push!(statements, :(return nothing))
   return _dynms_function(
-    Symbol(name, "_initialize_discrete_!"),
-    [:__discrete__, :__tunable__],
+    Symbol(name, "_initialize_parameters_!"),
+    [:__derived__, :__discrete__, :__tunable__],
     statements,
   )
 end
@@ -254,7 +265,7 @@ end
 
 function _generate_ode_code(dynms::DynMSModel; name=dynms.id)
   return (
-    initialize_discrete_func=_heta_initialize_discrete_function(dynms; name),
+    initialize_parameters_func=_heta_initialize_parameters_function(dynms; name),
     u0_func=_heta_u0_function(dynms; name),
     ode_func=_heta_ode_function(dynms; name),
     time_events=_heta_time_event_codes(dynms; name),
@@ -292,7 +303,7 @@ function _heta_generated_code_source(system::HetaODESystem)
   println(io, "using LinearAlgebra")
   println(io)
   code = system.generated_code
-  _dynms_function_source(io, code.initialize_discrete_func)
+  _dynms_function_source(io, code.initialize_parameters_func)
   _dynms_function_source(io, code.u0_func)
   _dynms_function_source(io, code.ode_func)
   _write_heta_event_functions(io, code.time_events)

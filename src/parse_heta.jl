@@ -53,7 +53,11 @@ has_initial_affect(event::AbstractDynMSEvent) = event.initial_affect
 
 struct DynMSParameters
   tunable::OrderedDict{Symbol,Float64}
+  derived::OrderedDict{Symbol,DynMSExpr}
   discrete::OrderedDict{Symbol,DynMSExpr}
+  # TODO: Remove this field when old_format_codegen.jl is removed.
+  # It only preserves the positional layout of legacy static parameters.
+  static_order::Vector{Symbol}
 end
 
 struct DynMSModel
@@ -194,13 +198,15 @@ end
 
 function _parse_dynms_model(model::AbstractDict)
 
-  parameters = _parse_dynms_parameters(model)
   assignment_rules = _parse_dynms_assignments(model)
   states = _parse_dynms_states(model)
   time_events = _parse_dynms_time_events(model)
   continuous_events = _parse_dynms_continuous_events(model)
   discrete_events = _parse_dynms_discrete_events(model)
   stop_events = _parse_dynms_stop_events(model)
+  parameters = _parse_dynms_parameters(
+    model, time_events, continuous_events, discrete_events,
+  )
   observables = _parse_dynms_observables(model)
 
   return DynMSModel(
@@ -216,10 +222,27 @@ function _parse_dynms_model(model::AbstractDict)
   )
 end
 
-function _parse_dynms_parameters(model::AbstractDict)
+function _parse_dynms_parameters(model::AbstractDict, event_groups...)
+  affected = Set{Symbol}()
+  for event in Iterators.flatten(values(group) for group in event_groups)
+    union!(affected, keys(event.discrete_affects))
+  end
+  derived = OrderedDict{Symbol,DynMSExpr}()
+  discrete = OrderedDict{Symbol,DynMSExpr}()
+  static_order = Symbol[]
+  for state in _dynms_static_defs(model)
+    id = Symbol(string(state["id"]))
+    initial = _parse_dynms_numeric_expr(
+      get(state, "initial", 0.0), "static state '$id' initial value",
+    )
+    push!(static_order, id)
+    (id in affected ? discrete : derived)[id] = initial
+  end
   return DynMSParameters(
     _parse_dynms_tunable(model),
-    _parse_dynms_discrete(model)
+    derived,
+    discrete,
+    static_order,
   )
 end
 
@@ -245,15 +268,6 @@ end
 
 function _dynms_event_defs(model::AbstractDict)
   return get(model, "events", Any[])
-end
-
-function _parse_dynms_discrete(model::AbstractDict)
-  discrete = OrderedDict{Symbol,DynMSExpr}()
-  for state in _dynms_static_defs(model)
-    id = Symbol(string(state["id"]))
-    discrete[id] = _parse_dynms_numeric_expr(get(state, "initial", 0.0), "static state '$id' initial value")
-  end
-  return discrete
 end
 
 function _parse_dynms_assignments(model::AbstractDict)
