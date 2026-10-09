@@ -8,6 +8,7 @@ using LinearAlgebra
     system = import_heta(
       _dynms_model_dir("0-hello-world");
       build_dir=joinpath(directory, "build"),
+      log_level="error",
       write_to_file=true,
       filename,
     )
@@ -23,6 +24,7 @@ using LinearAlgebra
     systems = import_heta_all(
       _dynms_model_dir("0-hello-world");
       build_dir=joinpath(directory, "build"),
+      log_level="error",
     )
     @test collect(keys(systems)) == [:mm]
     @test systems[:mm] isa HetaODESystem

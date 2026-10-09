@@ -8,7 +8,7 @@ using Test
     @test_throws ArgumentError HetaImporter.build_julia_file(heta_dir; ir_format=:unsupported, build_dir)
 
     for options in ((;), (; ir_format=:julia, spaceFilter=[:mm]))
-      julia_path = HetaImporter.build_julia_file(heta_dir; build_dir, options...)
+      julia_path = HetaImporter.build_julia_file(heta_dir; build_dir, log_level="error", options...)
       @test julia_path == joinpath(build_dir, "julia", "model.jl")
       @test isfile(julia_path)
       model_module = Module(gensym(:CompilerJuliaModel))

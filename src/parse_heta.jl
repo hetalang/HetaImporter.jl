@@ -132,28 +132,56 @@ end
 """
     parse_heta(heta_dir; build_dir, kwargs...)
 
-Parse Heta models into a `DynMSModelSet`.
+Build a Heta project as DynMS JSON, then parse it into a `DynMSModelSet`.
+
 Additional keyword arguments are forwarded to [`build_dynms_file`](@ref).
 """
 function parse_heta(heta_dir::AbstractString; kwargs...)
-  dynms_path = build_dynms_file(heta_dir; kwargs...)
-  return parse_dynms(dynms_path)
+  dynms_filepath = build_dynms_file(heta_dir; kwargs...)
+  return load_dynms(dynms_filepath)
 end
 
 """
-    parse_dynms(dynms_json::AbstractString)
+    load_dynms(dynms_filepath::AbstractString)
+
+Load a DynMS JSON file and parse it into a `DynMSModelSet`.
+
+The JSON document is loaded with `JSON.parsefile` and passed to
+[`parse_dynms`](@ref). The returned specification contains parsed model
+definitions, Julia expression trees for mathematical expressions, event
+definitions, and metadata from the DynMS generator.
+"""
+function load_dynms(dynms_filepath::AbstractString)
+  dynms_dict = JSON.parsefile(dynms_filepath)
+  validate_schema_dynms(dynms_dict)
+  
+  dynms_model_set = parse_dynms(dynms_dict)
+
+  return dynms_model_set
+end
+
+"""
+    validate_schema_dynms(dynms_dict::AbstractDict)
+
+Validate a DynMS JSON dictionary against the schema for its DynMS format
+version.
+
+This is currently a placeholder and performs no validation.
+"""
+function validate_schema_dynms(dynms_dict::AbstractDict)
+  return nothing
+end
+
+"""
     parse_dynms(data::AbstractDict)
 
-Parse a DynMS JSON file or already-loaded JSON dictionary into a `DynMSModelSet`.
+Parse an already-loaded DynMS JSON dictionary into a `DynMSModelSet`.
 
-The returned specification contains parsed model definitions, Julia expression
-trees for mathematical expressions, event definitions, and metadata from the
-DynMS generator.
+Use [`load_dynms`](@ref) when the input is a file path. The returned
+specification contains parsed model definitions, Julia expression trees for
+mathematical expressions, event definitions, and metadata from the DynMS
+generator.
 """
-function parse_dynms(dynms_json::AbstractString)
-  return parse_dynms(JSON.parsefile(dynms_json))
-end
-
 function parse_dynms(data::AbstractDict)
   dynms_version = string(get(data, "dynms", DYNMS_VERSION))
   dynms_version in DYNMS_SUPPORTED_VERSIONS ||
@@ -182,8 +210,9 @@ end
 
 Parse one DynMS model dictionary into a `DynMSModel`.
 
-This is mainly useful when working with a model entry extracted from a DynMS
-document. For normal use, prefer [`parse_dynms`](@ref).
+This is mainly useful when working with a model entry extracted from an
+already-loaded DynMS document. For a file path, use [`load_dynms`](@ref); to
+build and parse a Heta project, use [`parse_heta`](@ref).
 """
 parse_dynms_model(model::AbstractDict) = _parse_dynms_model(model)
 
