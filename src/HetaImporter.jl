@@ -70,6 +70,7 @@ include("heta_system_runtime.jl")
 
 export heta_version, heta_help, heta_init, heta_build
 export import_heta, import_heta_all
+export load_dynms, build_dynms_file
 export HetaODESystem, HetaParameters
 export getp
 export write_generated_code
