@@ -60,7 +60,7 @@ for platform in platforms
 end
 
 for (version, url) in DYNMS_SCHEMAS
-  artifact_name = "dynms_schema_$(replace(version, '.' => '_'))"
+  artifact_name = "dynms_schema_$version"
   println("Adding DynMS schema $version")
 
   try

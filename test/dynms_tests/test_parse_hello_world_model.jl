@@ -24,3 +24,13 @@
   @test isempty(model.discrete_events)
   @test isempty(model.stop_events)
 end
+
+@testset "DynMS schema validation" begin
+  invalid_dynms = Dict{String, Any}(
+    "dynms" => "0.2.1",
+    "models" => Any[],
+    "unexpected" => true,
+  )
+
+  @test_throws ArgumentError HetaImporter.validate_schema_dynms(invalid_dynms, "0.2.1")
+end

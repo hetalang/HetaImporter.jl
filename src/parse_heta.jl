@@ -144,7 +144,7 @@ end
 """
     load_dynms(dynms_filepath::AbstractString)
 
-Load a DynMS JSON file and parse it into a `DynMSModelSet`.
+Load, validate, and parse a DynMS JSON file into a `DynMSModelSet`.
 
 The JSON document is loaded with `JSON.parsefile` and passed to
 [`parse_dynms`](@ref). The returned specification contains parsed model
@@ -153,7 +153,15 @@ definitions, and metadata from the DynMS generator.
 """
 function load_dynms(dynms_filepath::AbstractString)
   dynms_dict = JSON.parsefile(dynms_filepath)
-  validate_schema_dynms(dynms_dict)
+  dynms_version = string(get(dynms_dict, "dynms", ""))
+  dynms_version in DYNMS_SUPPORTED_VERSIONS ||
+    throw(ArgumentError(
+      "Unsupported DynMS format version: $dynms_version. " *
+      "Supported versions are: $(join(DYNMS_SUPPORTED_VERSIONS, ", ")).",
+    ))
+
+  validate_schema_dynms(dynms_dict, dynms_version)
+  validate_semantic_dynms(dynms_dict, dynms_version)
   
   dynms_model_set = parse_dynms(dynms_dict)
 
@@ -161,21 +169,38 @@ function load_dynms(dynms_filepath::AbstractString)
 end
 
 """
-    validate_schema_dynms(dynms_dict::AbstractDict)
+    validate_schema_dynms(dynms_dict::AbstractDict, dynms_version::AbstractString)
 
 Validate a DynMS JSON dictionary against the schema for its DynMS format
 version.
-
-This is currently a placeholder and performs no validation.
 """
-function validate_schema_dynms(dynms_dict::AbstractDict)
+function validate_schema_dynms(dynms_dict::AbstractDict, dynms_version::AbstractString)
+  schema = DYNMS_SCHEMAS[dynms_version]
+  validation_issue = JSONSchema.validate(schema, dynms_dict)
+  isnothing(validation_issue) || throw(ArgumentError(
+    "DynMS format version $dynms_version does not conform to its JSON Schema:\n" *
+    sprint(show, validation_issue),
+  ))
+  return nothing
+end
+
+"""
+    validate_semantic_dynms(dynms_dict::AbstractDict, dynms_version::AbstractString)
+
+Validate semantic consistency of a DynMS JSON dictionary.
+
+`dynms_version` identifies the document format and is available for future
+format-specific validation. The schema validator verifies that the version is
+supported before this function is called.
+"""
+function validate_semantic_dynms(dynms_dict::AbstractDict, dynms_version::AbstractString)
   return nothing
 end
 
 """
     parse_dynms(data::AbstractDict)
 
-Parse an already-loaded DynMS JSON dictionary into a `DynMSModelSet`.
+Parse an already-loaded, validated DynMS JSON dictionary into a `DynMSModelSet`.
 
 Use [`load_dynms`](@ref) when the input is a file path. The returned
 specification contains parsed model definitions, Julia expression trees for
@@ -184,8 +209,6 @@ generator.
 """
 function parse_dynms(data::AbstractDict)
   dynms_version = string(get(data, "dynms", ""))
-  dynms_version in DYNMS_SUPPORTED_VERSIONS ||
-    throw(ArgumentError("Unsupported DynMS format version: $dynms_version. Supported versions are: $(join(DYNMS_SUPPORTED_VERSIONS, ", "))"))
 
   dynms_models = OrderedDict{Symbol,DynMSModel}()
   for model in get(data, "models", Any[])
