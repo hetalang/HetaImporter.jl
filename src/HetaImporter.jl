@@ -18,8 +18,7 @@ RuntimeGeneratedFunctions.init(@__MODULE__)
 
 # heta-compiler supported version
 const HETA_COMPILER_VERSION = "0.12.2"
-const DYNMS_VERSION = "0.2.1"
-const DYNMS_SUPPORTED_VERSIONS = (DYNMS_VERSION,)
+const DYNMS_SUPPORTED_VERSIONS = ("0.2.1",)
 
 function heta_compiler_load()
     artifact_info = artifact_meta("heta_app", joinpath(@__DIR__, "..", "Artifacts.toml"))

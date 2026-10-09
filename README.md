@@ -11,3 +11,21 @@ The package supports two ways to use Heta models from Julia:
 - `import_heta`: call heta-compiler's DynMS exporter, parse the resulting JSON, and construct a native `HetaODESystem`, which can be passed to `SciMLBase.ODEProblem`.
 
 The generated Julia file is intended to be loaded by simulation and parameter estimation packages such as [HetaSimulator](https://github.com/hetalang/HetaSimulator.jl).
+
+## Version maintenance
+
+Support for a heta-compiler release and its DynMS format is defined in four
+places that must be kept in sync:
+
+- `src/HetaImporter.jl`: `HETA_COMPILER_VERSION` and
+  `DYNMS_SUPPORTED_VERSIONS` define the runtime compatibility contract.
+- `artifacts/generate_artifacts.jl`: `HETA_COMPILER_RELEASE` selects the
+  compiler binaries, and `DYNMS_SCHEMAS` maps each supported DynMS version to
+  its schema archive.
+
+After changing the artifact sources, regenerate `Artifacts.toml` from the
+repository root:
+
+```powershell
+julia --project=artifacts artifacts\generate_artifacts.jl
+```
