@@ -10,6 +10,7 @@ platforms = [
   Artifacts.Platform("x86_64", "linux"),
   Artifacts.Platform("aarch64", "linux"),
   Artifacts.Platform("x86_64", "windows"),
+  # Artifacts.Platform("x86_64", "macos"), # not available now
   Artifacts.Platform("aarch64", "macos")
 ]
 
@@ -28,12 +29,6 @@ for platform in platforms
     error("Unsupported architecture: $arch")
   end
     
-  # tmp use aarch64-macos artifact for x86_64-macos hosts too
-  if os == "macos" && arch == "x64"
-    @warn "Using aarch64-macos artifact for x86_64-macos host (Rosetta)."
-    arch = "arm64"
-  end
-
   url = "https://github.com/hetalang/heta-compiler/releases/download/$HETA_COMPILER_RELEASE/heta-compiler-$os-$arch.tar.gz"
 
   println("Adding artifact for $platform")
