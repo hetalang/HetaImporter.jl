@@ -18,8 +18,8 @@ import SymbolicIndexingInterface: getp
 RuntimeGeneratedFunctions.init(@__MODULE__)
 
 # heta-compiler supported version
-const HETA_COMPILER_VERSION = "0.12.2"
-const DYNMS_SUPPORTED_VERSIONS = ("0.2.1",)
+const HETA_COMPILER_VERSION = "0.12.3"
+const DYNMS_SUPPORTED_VERSIONS = ("0.2.1","0.2.2")
 const ARTIFACTS_TOML = joinpath(@__DIR__, "..", "Artifacts.toml")
 
 function heta_compiler_load()
