@@ -25,6 +25,7 @@ HetaImporter.parse_heta
 ## Advanced: DynMS Parsing
 
 ```@docs
+HetaImporter.load_dynms
 HetaImporter.parse_dynms
 HetaImporter.parse_dynms_model
 ```
