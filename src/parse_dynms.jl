@@ -130,29 +130,20 @@ function _dynms_expr_source(ex)
 end
 
 """
-    parse_heta(heta_dir; build_dir, kwargs...)
+    parse_dynms(dynms_filepath::AbstractString)
 
-Build a Heta project as DynMS JSON, then parse it into a `DynMSModelSet`.
-
-Additional keyword arguments are forwarded to [`build_dynms_file`](@ref).
+Parse a DynMS JSON file into a dictionary without validation or conversion.
+Use [`import_dynms`](@ref) to construct a `HetaODESystem` from a file.
 """
-function parse_heta(heta_dir::AbstractString; kwargs...)
-  dynms_filepath = build_dynms_file(heta_dir; kwargs...)
-  return load_dynms(dynms_filepath)
-end
+parse_dynms(dynms_filepath::AbstractString) = JSON.parsefile(dynms_filepath)
 
 """
-    load_dynms(dynms_filepath::AbstractString)
+    validate_dynms(dynms_dict::AbstractDict)
 
-Load, validate, and parse a DynMS JSON file into a `DynMSModelSet`.
-
-The JSON document is loaded with `JSON.parsefile` and passed to
-[`parse_dynms`](@ref). The returned specification contains parsed model
-definitions, Julia expression trees for mathematical expressions, event
-definitions, and metadata from the DynMS generator.
+Check the supported format version, JSON schema, and semantic consistency of
+an already-parsed DynMS dictionary. Return `nothing` on success.
 """
-function load_dynms(dynms_filepath::AbstractString)
-  dynms_dict = JSON.parsefile(dynms_filepath)
+function validate_dynms(dynms_dict::AbstractDict)
   dynms_version = string(get(dynms_dict, "dynms", ""))
   dynms_version in DYNMS_SUPPORTED_VERSIONS ||
     throw(ArgumentError(
@@ -163,9 +154,7 @@ function load_dynms(dynms_filepath::AbstractString)
   validate_schema_dynms(dynms_dict, dynms_version)
   validate_semantic_dynms(dynms_dict, dynms_version)
   
-  dynms_model_set = parse_dynms(dynms_dict)
-
-  return dynms_model_set
+  return nothing
 end
 
 """
@@ -198,22 +187,22 @@ function validate_semantic_dynms(dynms_dict::AbstractDict, dynms_version::Abstra
 end
 
 """
-    parse_dynms(data::AbstractDict)
+    convert_dynms(data::AbstractDict)
 
-Parse an already-loaded, validated DynMS JSON dictionary into a `DynMSModelSet`.
+Convert an already-parsed, validated DynMS JSON dictionary into a `DynMSModelSet`.
 
-Use [`load_dynms`](@ref) when the input is a file path. The returned
-specification contains parsed model definitions, Julia expression trees for
+Use [`parse_dynms`](@ref) to read a file and [`validate_dynms`](@ref) before
+conversion. The returned specification contains model definitions, Julia expression trees for
 mathematical expressions, event definitions, and metadata from the DynMS
 generator.
 """
-function parse_dynms(data::AbstractDict)
+function convert_dynms(data::AbstractDict)
   dynms_version = string(get(data, "dynms", ""))
 
   dynms_models = OrderedDict{Symbol,DynMSModel}()
   for model in get(data, "models", Any[])
     isempty_dynms_model(model) && continue
-    dynms_model = parse_dynms_model(model)
+    dynms_model = convert_dynms_model(model)
     dynms_models[dynms_model.id] = dynms_model
   end
  
@@ -224,15 +213,15 @@ function parse_dynms(data::AbstractDict)
 end
 
 """
-    parse_dynms_model(model::AbstractDict)
+    convert_dynms_model(model::AbstractDict)
 
-Parse one DynMS model dictionary into a `DynMSModel`.
+Convert one validated DynMS model dictionary into a `DynMSModel`.
 
 This is mainly useful when working with a model entry extracted from an
-already-loaded DynMS document. For a file path, use [`load_dynms`](@ref); to
-build and parse a Heta project, use [`parse_heta`](@ref).
+already-validated DynMS document. To import a file as a system, use
+[`import_dynms`](@ref); for a Heta project, use [`import_heta`](@ref).
 """
-parse_dynms_model(model::AbstractDict) = _parse_dynms_model(model)
+convert_dynms_model(model::AbstractDict) = _convert_dynms_model(model)
 
 function isempty_dynms_model(model::AbstractDict)
   return all(isempty(get(model, key, Any[])) for key in (
@@ -240,18 +229,18 @@ function isempty_dynms_model(model::AbstractDict)
   ))
 end
 
-function _parse_dynms_model(model::AbstractDict)
+function _convert_dynms_model(model::AbstractDict)
 
-  assignment_rules = _parse_dynms_assignments(model)
-  states = _parse_dynms_states(model)
-  time_events = _parse_dynms_time_events(model)
-  continuous_events = _parse_dynms_continuous_events(model)
-  discrete_events = _parse_dynms_discrete_events(model)
-  stop_events = _parse_dynms_stop_events(model)
-  parameters = _parse_dynms_parameters(
+  assignment_rules = _convert_dynms_assignments(model)
+  states = _convert_dynms_states(model)
+  time_events = _convert_dynms_time_events(model)
+  continuous_events = _convert_dynms_continuous_events(model)
+  discrete_events = _convert_dynms_discrete_events(model)
+  stop_events = _convert_dynms_stop_events(model)
+  parameters = _convert_dynms_parameters(
     model, time_events, continuous_events, discrete_events,
   )
-  observables = _parse_dynms_observables(model)
+  observables = _convert_dynms_observables(model)
 
   return DynMSModel(
     Symbol(model["id"]),
@@ -266,7 +255,7 @@ function _parse_dynms_model(model::AbstractDict)
   )
 end
 
-function _parse_dynms_parameters(model::AbstractDict, event_groups...)
+function _convert_dynms_parameters(model::AbstractDict, event_groups...)
   affected = Set{Symbol}()
   for event in Iterators.flatten(values(group) for group in event_groups)
     union!(affected, keys(event.discrete_affects))
@@ -275,19 +264,19 @@ function _parse_dynms_parameters(model::AbstractDict, event_groups...)
   discrete = OrderedDict{Symbol,DynMSExpr}()
   for state in _dynms_static_defs(model)
     id = Symbol(string(state["id"]))
-    initial = _parse_dynms_numeric_expr(
+    initial = _convert_dynms_numeric_expr(
       get(state, "initial", 0.0), "static state '$id' initial value",
     )
     (id in affected ? discrete : derived)[id] = initial
   end
   return DynMSParameters(
-    _parse_dynms_tunable(model),
+    _convert_dynms_tunable(model),
     derived,
     discrete,
   )
 end
 
-function _parse_dynms_tunable(model::AbstractDict)
+function _convert_dynms_tunable(model::AbstractDict)
   tunable = OrderedDict{Symbol,Float64}()
   for constant in get(model, "constants", Any[])
     tunable[Symbol(string(constant["id"]))] = Float64(constant["value"])
@@ -311,16 +300,16 @@ function _dynms_event_defs(model::AbstractDict)
   return get(model, "events", Any[])
 end
 
-function _parse_dynms_assignments(model::AbstractDict)
+function _convert_dynms_assignments(model::AbstractDict)
   assignment_rules = OrderedDict{Symbol,DynMSExpr}()
   for assignment in get(model, "assignments", Any[])
     id = Symbol(string(assignment["id"]))
-    assignment_rules[id] = _parse_dynms_numeric_expr(assignment["rhs"], "assignment '$id'")
+    assignment_rules[id] = _convert_dynms_numeric_expr(assignment["rhs"], "assignment '$id'")
   end
   return assignment_rules
 end
 
-function _parse_dynms_states(model::AbstractDict)
+function _convert_dynms_states(model::AbstractDict)
   states = OrderedDict{Symbol,DynMSState}()
   for state in _dynms_dynamic_defs(model)
     id = string(state["id"])
@@ -328,65 +317,65 @@ function _parse_dynms_states(model::AbstractDict)
       throw(ArgumentError("DynMS dynamic state '$id' does not include a derivative."))
 
     states[Symbol(id)] = DynMSState(
-      _parse_dynms_numeric_expr(get(state, "initial", 0.0), "dynamic state '$id' initial value"),
-      _parse_dynms_numeric_expr(state["derivative"], "dynamic state '$id' derivative"),
+      _convert_dynms_numeric_expr(get(state, "initial", 0.0), "dynamic state '$id' initial value"),
+      _convert_dynms_numeric_expr(state["derivative"], "dynamic state '$id' derivative"),
       Bool(get(state, "algebraic", false))
     )
   end
   return states
 end
 
-function _parse_dynms_time_events(model::AbstractDict)
+function _convert_dynms_time_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSTimeEvent}()
   for event in _dynms_time_event_defs(model)
-    parsed = _parse_dynms_time_event(model, event)
+    parsed = _convert_dynms_time_event(model, event)
     events[parsed.id] = parsed
   end
   return events
 end
 
-function _parse_dynms_continuous_events(model::AbstractDict)
+function _convert_dynms_continuous_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSContinuousEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :continuous || continue
-    parsed = _parse_dynms_continuous_event(model, event)
+    parsed = _convert_dynms_continuous_event(model, event)
     events[parsed.id] = parsed
   end
   return events
 end
 
-function _parse_dynms_discrete_events(model::AbstractDict)
+function _convert_dynms_discrete_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSDiscreteEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :discrete || continue
-    parsed = _parse_dynms_discrete_event(model, event)
+    parsed = _convert_dynms_discrete_event(model, event)
     events[parsed.id] = parsed
   end
   return events
 end
 
-function _parse_dynms_stop_events(model::AbstractDict)
+function _convert_dynms_stop_events(model::AbstractDict)
   events = OrderedDict{Symbol,DynMSStopEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :stop || continue
-    parsed = _parse_dynms_stop_event(event)
+    parsed = _convert_dynms_stop_event(event)
     events[parsed.id] = parsed
   end
   return events
 end
 
-function _parse_dynms_observables(model::AbstractDict)
+function _convert_dynms_observables(model::AbstractDict)
   return Symbol[Symbol(string(obs["symbol"])) for obs in get(model, "observables", Any[])]
 end
 
-function _parse_dynms_time_event(model::AbstractDict, event)
+function _convert_dynms_time_event(model::AbstractDict, event)
   trigger = event["trigger"]
-  state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
+  state_affects, discrete_affects = _convert_dynms_event_affects(model, event)
   return DynMSTimeEvent(
     Symbol(string(event["id"])),
-    _parse_dynms_value(get(trigger, "start", 0.0)),
-    _parse_dynms_optional_value(get(trigger, "period", nothing)),
-    _parse_dynms_optional_value(get(trigger, "stop", nothing)),
+    _convert_dynms_value(get(trigger, "start", 0.0)),
+    _convert_dynms_optional_value(get(trigger, "period", nothing)),
+    _convert_dynms_optional_value(get(trigger, "stop", nothing)),
     state_affects,
     discrete_affects,
     Bool(get(trigger, "atStart", false)),
@@ -394,11 +383,11 @@ function _parse_dynms_time_event(model::AbstractDict, event)
   )
 end
 
-function _parse_dynms_continuous_event(model::AbstractDict, event)
-  state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
+function _convert_dynms_continuous_event(model::AbstractDict, event)
+  state_affects, discrete_affects = _convert_dynms_event_affects(model, event)
   return DynMSContinuousEvent(
     Symbol(string(event["id"])),
-    _parse_dynms_condition(event["trigger"]["rhs"]),
+    _convert_dynms_condition(event["trigger"]["rhs"]),
     state_affects,
     discrete_affects,
     Bool(get(event["trigger"], "atStart", false)),
@@ -406,11 +395,11 @@ function _parse_dynms_continuous_event(model::AbstractDict, event)
   )
 end
 
-function _parse_dynms_discrete_event(model::AbstractDict, event)
-  state_affects, discrete_affects = _parse_dynms_event_affects(model, event)
+function _convert_dynms_discrete_event(model::AbstractDict, event)
+  state_affects, discrete_affects = _convert_dynms_event_affects(model, event)
   return DynMSDiscreteEvent(
     Symbol(string(event["id"])),
-    _parse_dynms_condition(event["trigger"]["rhs"]),
+    _convert_dynms_condition(event["trigger"]["rhs"]),
     state_affects,
     discrete_affects,
     Bool(get(event["trigger"], "atStart", false)),
@@ -418,16 +407,16 @@ function _parse_dynms_discrete_event(model::AbstractDict, event)
   )
 end
 
-function _parse_dynms_stop_event(event)
+function _convert_dynms_stop_event(event)
   return DynMSStopEvent(
     Symbol(string(event["id"])),
-    _parse_dynms_condition(event["trigger"]["rhs"]),
+    _convert_dynms_condition(event["trigger"]["rhs"]),
     Bool(get(event["trigger"], "atStart", false)),
     Bool(get(event, "active", true))
   )
 end
 
-function _parse_dynms_event_affects(model::AbstractDict, event)
+function _convert_dynms_event_affects(model::AbstractDict, event)
   dynamic_state_ids = Set(string(state["id"]) for state in _dynms_dynamic_defs(model))
   discrete_ids = Set(string(state["id"]) for state in _dynms_static_defs(model))
   state_affects = OrderedDict{Symbol,DynMSExpr}()
@@ -436,7 +425,7 @@ function _parse_dynms_event_affects(model::AbstractDict, event)
   for action in get(event, "actions", Any[])
     state_id = string(action["state"])
     target = Symbol(state_id)
-    rhs = _parse_dynms_numeric_expr(action["rhs"], "event $(event["id"]) update to '$state_id'")
+    rhs = _convert_dynms_numeric_expr(action["rhs"], "event $(event["id"]) update to '$state_id'")
 
     if state_id in dynamic_state_ids
       state_affects[target] = rhs
@@ -478,32 +467,32 @@ function _dynms_event_kind(event)
   throw(ArgumentError("Unsupported DynMS event trigger type/detection combination: type='$trigger_type', detection='$detection_type'."))
 end
 
-function _parse_dynms_optional_value(value)
+function _convert_dynms_optional_value(value)
   isnothing(value) && return nothing
-  return _parse_dynms_value(value)
+  return _convert_dynms_value(value)
 end
 
-function _parse_dynms_value(value)
-  parsed = _parse_dynms_expr(value)
+function _convert_dynms_value(value)
+  parsed = _convert_dynms_expr(value)
   parsed isa Float64 && return parsed
   parsed isa Symbol && return parsed
   throw(ArgumentError("DynMS time-event value must be numeric or symbolic, got: $parsed"))
 end
 
-function _parse_dynms_condition(expr)
-  parsed = _parse_dynms_expr(expr)
+function _convert_dynms_condition(expr)
+  parsed = _convert_dynms_expr(expr)
   parsed isa Union{Expr,Symbol} && return parsed
   throw(ArgumentError("DynMS event condition must parse to Expr or Symbol, got: $parsed"))
 end
 
-function _parse_dynms_numeric_expr(expr, context)
-  parsed = _parse_dynms_expr(expr)
+function _convert_dynms_numeric_expr(expr, context)
+  parsed = _convert_dynms_expr(expr)
   parsed isa Bool &&
     throw(ArgumentError("DynMS $context must be numeric, got Boolean: $parsed"))
   return parsed::DynMSExpr
 end
 
-function _parse_dynms_expr(expr)
+function _convert_dynms_expr(expr)
   payload = _dynms_expr_payload(expr)
   payload isa Bool && return payload
   payload isa Number && return Float64(payload)

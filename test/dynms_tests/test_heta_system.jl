@@ -21,6 +21,24 @@ using LinearAlgebra
     @test isempty(events(system).time)
     @test isfile(filename)
 
+    dynms_path = joinpath(directory, "build", "dynms", "output.dynms.json")
+    data = HetaImporter.parse_dynms(dynms_path)
+    @test data isa AbstractDict
+    @test HetaImporter.validate_dynms(data) === nothing
+    @test HetaImporter.convert_dynms(data) isa HetaImporter.DynMSModelSet
+    imported = import_dynms(dynms_path; model_id=:mm)
+    @test imported isa HetaODESystem
+    @test equations(imported) == equations(system)
+    @test_throws ArgumentError import_dynms(dynms_path; model_id=:missing)
+
+    invalid_path = joinpath(directory, "invalid.json")
+    write(invalid_path, "{\"dynms\":\"unsupported\",\"models\":[]}")
+    @test HetaImporter.parse_dynms(invalid_path)["dynms"] == "unsupported"
+    @test_throws ArgumentError import_dynms(invalid_path)
+    write(invalid_path, "{\"dynms\":\"0.2.2\",\"models\":false}")
+    @test HetaImporter.parse_dynms(invalid_path)["models"] === false
+    @test_throws ArgumentError import_dynms(invalid_path)
+
     systems = import_heta_all(
       _dynms_model_dir("0-hello-world");
       build_dir=joinpath(directory, "build"),
@@ -32,7 +50,7 @@ using LinearAlgebra
 end
 
 @testset "algebraic states" begin
-  model = HetaImporter.parse_dynms_model(Dict(
+  model = HetaImporter.convert_dynms_model(Dict(
     "id" => "algebraic",
     "dynamic" => [
       Dict("id" => "x", "initial" => 0.0, "derivative" => 0.0, "algebraic" => true),
@@ -48,7 +66,7 @@ end
     "static" => [Dict("id" => "p", "initial" => true)],
     "dynamic" => [Dict("id" => "x", "initial" => 0.0, "derivative" => false)],
   )
-    @test_throws ArgumentError HetaImporter.parse_dynms_model(Dict(
+    @test_throws ArgumentError HetaImporter.convert_dynms_model(Dict(
       "id" => "invalid", field => definitions,
     ))
   end

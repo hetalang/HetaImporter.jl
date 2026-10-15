@@ -24,14 +24,29 @@ Get model `:my_model` as `HetaODESystem` from a Heta project.
 system = import_heta("path/to/heta-project"; model_id=:my_model)
 ```
 
+Import a DynMS JSON file directly as `HetaODESystem`.
+```julia
+system = import_dynms("path/to/output.dynms.json"; model_id=:my_model)
+```
+
+The processing stages can also be called separately:
+```julia
+data = HetaImporter.parse_dynms("path/to/output.dynms.json") # unvalidated dictionary
+# For a Heta project, first create the file with build_dynms_file("path/to/heta-project").
+HetaImporter.validate_dynms(data)
+model_set = HetaImporter.convert_dynms(data) # DynMSModelSet
+model = HetaImporter.convert_dynms_model(data["models"][1]) # DynMSModel
+```
+
+`build_dynms_file` compiles a Heta project and returns the DynMS file path;
+`parse_dynms` reads that file into an unvalidated dictionary. Dictionary conversion uses
+`convert_dynms` and `convert_dynms_model` instead of `parse_dynms` and
+`parse_dynms_model`. The former `load_dynms` pipeline is replaced by the
+explicit stages above, or `import_dynms` when a system is needed.
+
 Get all models as `OrderedDict{Symbol,HetaODESystem}` from a Heta project.
 ```julia
 systems = import_heta_all("path/to/heta-project")
-```
-
-Get a validated `DynMSModelSet` from a DynMS JSON file.
-```julia
-dynms = load_dynms("path/to/output.dynms.json")
 ```
 
 Compile a Heta project to a Julia source file and get its path.

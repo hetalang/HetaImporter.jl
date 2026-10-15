@@ -6,7 +6,7 @@ import SymbolicIndexingInterface as SII
 import SciMLStructures
 
 @testset "ODEProblem and symbolic results" begin
-  system = HetaImporter.build_ode_system(_parse_fresh_heta("0-hello-world").models[:mm])
+  system = HetaImporter.build_ode_system(_convert_fresh_heta("0-hello-world").models[:mm])
   problem = ODEProblem(system, (0.0, 10.0))
   u0 = problem.u0(problem.p, 0.0)
   @test u0 == [10.0, 0.0]
@@ -35,7 +35,7 @@ end
 
 # A constant state and an observable depending on a parameter that events can change.
 function _event_system(; time_events=Any[], events=Any[])
-  model = HetaImporter.parse_dynms_model(Dict(
+  model = HetaImporter.convert_dynms_model(Dict(
     "id" => "event_test",
     "constants" => [Dict("id" => "k", "value" => 1.0)],
     "dynamic" => [Dict("id" => "x", "initial" => 1.0, "derivative" => 0.0)],

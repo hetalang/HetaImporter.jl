@@ -1,5 +1,5 @@
 @testset "DynMS parser: hello world" begin
-  spec = _parse_fresh_heta("0-hello-world")
+  spec = _convert_fresh_heta("0-hello-world")
 
   @test spec.version in HetaImporter.DYNMS_SUPPORTED_VERSIONS
   @test collect(keys(spec.models)) == [:mm]

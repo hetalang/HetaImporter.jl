@@ -1,5 +1,5 @@
 @testset "DynMS parser: continuous switcher" begin
-  spec = _parse_fresh_heta("9-c-switcher")
+  spec = _convert_fresh_heta("9-c-switcher")
   model = spec.models[:nameless]
 
   @test collect(keys(model.parameters.tunable)) == [:k1]

@@ -1,5 +1,5 @@
 @testset "DynMS parser: time switcher" begin
-  spec = _parse_fresh_heta("11-time-switcher")
+  spec = _convert_fresh_heta("11-time-switcher")
   model = spec.models[:nameless]
 
   @test collect(keys(model.parameters.tunable)) == [:kabs, :kel, :sw2_start]

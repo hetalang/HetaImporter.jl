@@ -81,9 +81,9 @@ end
     import_heta(heta_dir; model_id=nothing, write_to_file=false,
                 filename=nothing, kwargs...)
 
-Compile a Heta project, parse it, and lower the selected model to a
-native [`HetaODESystem`](@ref). Remaining keyword arguments are forwarded to
-[`parse_heta`](@ref).
+Compile a Heta project to DynMS and delegate to [`import_dynms`](@ref) to
+construct a native [`HetaODESystem`](@ref). Remaining keyword arguments are forwarded to
+[`build_dynms_file`](@ref).
 """
 function import_heta(
   heta_dir::AbstractString;
@@ -92,13 +92,29 @@ function import_heta(
   filename::Union{AbstractString,Nothing}=nothing,
   kwargs...,
 )
-  model_set = parse_heta(heta_dir; kwargs...)
-  return build_ode_system(
-    model_set;
-    model_id,
-    write_to_file,
-    filename,
-  )
+  dynms_filepath = build_dynms_file(heta_dir; kwargs...)
+  return import_dynms(dynms_filepath; model_id, write_to_file, filename)
+end
+
+"""
+    import_dynms(dynms_filepath; model_id=nothing, write_to_file=false,
+                 filename=nothing)
+
+Parse and validate a DynMS JSON file, convert it to a model set, and build the
+selected model as a native [`HetaODESystem`](@ref). `model_id` is required when
+there is more than one non-empty model. When `write_to_file=true`, generated
+Julia source is also written to `filename`.
+"""
+function import_dynms(
+  dynms_filepath::AbstractString;
+  model_id::Union{Symbol,Nothing}=nothing,
+  write_to_file::Bool=false,
+  filename::Union{AbstractString,Nothing}=nothing,
+)
+  data = parse_dynms(dynms_filepath)
+  validate_dynms(data)
+  model_set = convert_dynms(data)
+  return build_ode_system(model_set; model_id, write_to_file, filename)
 end
 
 """
@@ -106,7 +122,7 @@ end
 
 Compile a Heta project and return every model as an
 `OrderedDict{Symbol,<:HetaODESystem}` keyed by model ID. Remaining keyword
-arguments are forwarded to [`parse_heta`](@ref).
+arguments are forwarded to [`build_dynms_file`](@ref).
 
 When `write_to_file=true`, readable generated code is written to
 `<output_dir>/<model_id>_ode.jl` for each system.
@@ -117,7 +133,10 @@ function import_heta_all(
   output_dir::AbstractString=".",
   kwargs...,
 )
-  model_set = parse_heta(heta_dir; kwargs...)
+  dynms_filepath = build_dynms_file(heta_dir; kwargs...)
+  data = parse_dynms(dynms_filepath)
+  validate_dynms(data)
+  model_set = convert_dynms(data)
   return OrderedDict(
     id => build_ode_system(
       model;

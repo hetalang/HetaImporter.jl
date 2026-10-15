@@ -16,18 +16,19 @@ HetaImporter.build_dynms_file
 HetaImporter.build_julia_file
 ```
 
-## Advanced: Heta Parsing
+## Advanced: DynMS Parsing, Validation, and Conversion
+
+`build_dynms_file` compiles a Heta project and returns a DynMS file path.
+`parse_dynms` reads a DynMS file into an unvalidated dictionary. Pass it to
+`validate_dynms` before `convert_dynms` creates a `DynMSModelSet`.
+`convert_dynms_model` converts one validated model dictionary to a `DynMSModel`.
+For a complete file-to-system pipeline, use `import_heta` or `import_dynms`.
 
 ```@docs
-HetaImporter.parse_heta
-```
-
-## Advanced: DynMS Parsing
-
-```@docs
-HetaImporter.load_dynms
 HetaImporter.parse_dynms
-HetaImporter.parse_dynms_model
+HetaImporter.validate_dynms
+HetaImporter.convert_dynms
+HetaImporter.convert_dynms_model
 ```
 
 ## Heta Import and ODE Construction
@@ -35,6 +36,7 @@ HetaImporter.parse_dynms_model
 ```@docs
 import_heta
 import_heta_all
+import_dynms
 HetaODESystem
 HetaParameters
 HetaImporter.build_ode_system

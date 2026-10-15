@@ -62,15 +62,15 @@ const DYNMS_SCHEMAS = dynms_schemas_load()
 
 include("heta_cli.jl")
 include("build_julia_file.jl")
-include("parse_heta.jl")
+include("parse_dynms.jl")
 include("heta_parameters.jl")
 include("heta_system.jl")
 include("heta_system_codegen.jl")
 include("heta_system_runtime.jl")
 
 export heta_version, heta_help, heta_init, heta_build
-export import_heta, import_heta_all
-export load_dynms, build_dynms_file
+export import_heta, import_heta_all, import_dynms
+export build_dynms_file
 export HetaODESystem, HetaParameters
 export getp
 export write_generated_code
