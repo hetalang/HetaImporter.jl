@@ -438,6 +438,8 @@ function SciMLBase.ODEProblem(
     "u0 is defined by HetaODESystem and cannot be supplied to ODEProblem.",
   ))
 
+  # Use the same continuous time type for the problem and its event callbacks.
+  tspan = promote(float(first(tspan)), float(last(tspan)))
   parameters = _heta_problem_parameters(system, p)
   initial_state = _heta_runtime_function(system.generated_code.u0_func)
   ode_function = SciMLBase.ODEFunction(system)
