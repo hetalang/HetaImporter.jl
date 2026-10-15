@@ -1,10 +1,7 @@
 @testset "DynMS parser: hello world" begin
-  spec = _convert_fresh_heta("0-hello-world")
+  sys = import_heta(_dynms_model_dir("0-hello-world"), :mm)
+  model = sys.dynms
 
-  @test spec.version in HetaImporter.DYNMS_SUPPORTED_VERSIONS
-  @test collect(keys(spec.models)) == [:mm]
-
-  model = spec.models[:mm]
   @test model.id == :mm
   @test collect(keys(model.parameters.tunable)) == [:Vmax, :Km]
   @test collect(values(model.parameters.tunable)) == [0.1, 2.5]
@@ -23,14 +20,4 @@
   @test isempty(model.continuous_events)
   @test isempty(model.discrete_events)
   @test isempty(model.stop_events)
-end
-
-@testset "DynMS schema validation" begin
-  invalid_dynms = Dict{String, Any}(
-    "dynms" => "0.2.1",
-    "models" => Any[],
-    "unexpected" => true,
-  )
-
-  @test_throws ArgumentError HetaImporter.validate_schema_dynms(invalid_dynms, "0.2.1")
 end

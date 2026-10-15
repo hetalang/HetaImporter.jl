@@ -1,6 +1,6 @@
 @testset "DynMS parser: continuous switcher" begin
-  spec = _convert_fresh_heta("9-c-switcher")
-  model = spec.models[:nameless]
+  sys = import_heta(_dynms_model_dir("9-c-switcher"))
+  model = sys.dynms
 
   @test collect(keys(model.parameters.tunable)) == [:k1]
   @test collect(keys(model.states)) == [:x1_amt_, :x2_amt_]

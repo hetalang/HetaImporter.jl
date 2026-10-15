@@ -5,15 +5,6 @@ const DYNMS_TEST_MODELS_DIR = joinpath(@__DIR__, "models", "dynms")
 
 _dynms_model_dir(model_name::AbstractString) = joinpath(DYNMS_TEST_MODELS_DIR, model_name)
 
-function _convert_fresh_heta(model_name::AbstractString)
-  return mktempdir() do build_dir
-        dynms_filepath = build_dynms_file(_dynms_model_dir(model_name); build_dir, log_level="error")
-        data = HetaImporter.parse_dynms(dynms_filepath)
-        HetaImporter.validate_dynms(data)
-        HetaImporter.convert_dynms(data)
-  end
-end
-
 @testset "HetaImporter.jl" begin
 
     @testset "Heta compiler CLI tests" begin
@@ -28,5 +19,5 @@ end
     end
     include("test_build_julia_file.jl")
     include("dynms_tests/test_heta_system.jl")
-    include("dynms_tests/test_julia_backend.jl")
+    include("dynms_tests/test_odeprob_interface.jl")
 end

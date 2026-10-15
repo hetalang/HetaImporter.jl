@@ -12,7 +12,6 @@ import Base: SHA1
 using SciMLBase
 using SciMLStructures
 import SymbolicIndexingInterface as SII
-import SymbolicIndexingInterface: getp
 
 
 RuntimeGeneratedFunctions.init(@__MODULE__)
@@ -72,7 +71,6 @@ export heta_version, heta_help, heta_init, heta_build
 export import_heta, import_heta_all, import_dynms
 export build_dynms_file
 export HetaODESystem, HetaParameters
-export getp
 export write_generated_code
 export equations, initial_conditions, parameters, observed, events
 

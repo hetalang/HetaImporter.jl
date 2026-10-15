@@ -1,6 +1,6 @@
 @testset "DynMS parser: discrete switcher" begin
-  spec = _convert_fresh_heta("16-d-switcher")
-  model = spec.models[:nameless]
+  sys = import_heta(_dynms_model_dir("16-d-switcher"))
+  model = sys.dynms
 
   @test collect(keys(model.parameters.tunable)) == [:k1]
   @test collect(keys(model.states)) == [:S1_amt_, :x1]

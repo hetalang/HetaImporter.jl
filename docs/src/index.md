@@ -63,7 +63,7 @@ sol[[:x, :y]]          # both quantities at each saved time
 sol(50.0; idxs=:y)     # observed value at a particular time
 ```
 
-Use the names returned by `equations(sys)` and `observed(sys)` for these queries. Parameters are accessed separately through [`getp`](https://docs.sciml.ai/SymbolicIndexingInterface/stable/api/#SymbolicIndexingInterface.getp).
+Use the names returned by `equations(sys)` and `observed(sys)` for these queries. Access parameters with `sol.ps[:Vmax]`, or import [`getp`](https://docs.sciml.ai/SymbolicIndexingInterface/stable/api/#SymbolicIndexingInterface.getp) explicitly with `using SymbolicIndexingInterface: getp`.
 
 ### Import multiple models
 
