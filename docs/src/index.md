@@ -77,6 +77,11 @@ sys = systems[:my_model]
 
 Both import functions accept `build_dir` for the compiler output directory and `spaceFilter` for selecting namespaces before import. For example, `spaceFilter=[:my_model]` restricts compilation to that namespace.
 
+`import_heta` uses a temporary compiler output directory by default and removes
+it after import, including on failure. Set `build_dir` explicitly to retain
+compiler output. This does not change the destination of generated Julia source
+requested with `write_to_file` and `filename`.
+
 ### Inspect the model and generated functions
 
 The system retains expressions and event definitions for inspection:

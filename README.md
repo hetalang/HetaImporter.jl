@@ -24,6 +24,9 @@ Get model `:my_model` as `HetaODESystem` from a Heta project.
 system = import_heta("path/to/heta-project", :my_model)
 ```
 
+`import_heta` stores compiler output in a temporary directory and removes it
+after import. Set `build_dir` explicitly to retain that output in a chosen directory.
+
 Import a DynMS JSON file directly as `HetaODESystem`.
 ```julia
 system = import_dynms("path/to/output.dynms.json", :my_model)

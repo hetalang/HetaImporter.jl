@@ -54,6 +54,28 @@ using LinearAlgebra
   end
 end
 
+@testset "temporary compiler output" begin
+  mktempdir() do directory
+    heta_dir = mkdir(joinpath(directory, "project"))
+    source = _dynms_model_dir("0-hello-world")
+    cp(joinpath(source, "platform.yml"), joinpath(heta_dir, "platform.yml"))
+    cp(joinpath(source, "src"), joinpath(heta_dir, "src"))
+    original_entries = readdir(heta_dir)
+    filename = joinpath(directory, "mm_ode.jl")
+
+    system = import_heta(heta_dir, :mm; log_level="error", write_to_file=true, filename)
+    @test nameof(system) === :mm
+    @test collect(keys(equations(system))) == [:S_amt_, :P_amt_]
+    @test isfile(filename)
+    @test readdir(heta_dir) == original_entries
+    @test !ispath(joinpath(heta_dir, "dist"))
+
+    @test_throws ArgumentError import_heta(heta_dir, :missing; log_level="error")
+    @test readdir(heta_dir) == original_entries
+    @test !ispath(joinpath(heta_dir, "dist"))
+  end
+end
+
 @testset "default nameless model" begin
   mktempdir() do build_dir
     system = import_heta(_dynms_model_dir("11-time-switcher"); build_dir, log_level="error")

@@ -79,20 +79,32 @@ end
 
 """
     import_heta(heta_dir, model_id::Symbol=:nameless; write_to_file=false,
-                filename=nothing, kwargs...)
+                filename=nothing, build_dir=nothing, kwargs...)
 
 Compile a Heta project to DynMS and delegate to [`import_dynms`](@ref) to
 construct a native [`HetaODESystem`](@ref). Remaining keyword arguments are forwarded to
 [`build_dynms_file`](@ref). The selected model defaults to `:nameless` and must exist.
+
+By default, compiler output is stored in a temporary directory that is removed
+after import, including on failure. Set `build_dir` to retain compiler output
+in a specific directory. 
 """
 function import_heta(
   heta_dir::AbstractString,
   model_id::Symbol=:nameless;
   write_to_file::Bool=false,
   filename::Union{AbstractString,Nothing}=nothing,
+  build_dir::Union{AbstractString,Nothing}=nothing,
   kwargs...,
 )
-  dynms_filepath = build_dynms_file(heta_dir; kwargs...)
+
+  if isnothing(build_dir)
+    return mktempdir() do temporary_build_dir
+      import_heta(heta_dir, model_id; build_dir=temporary_build_dir,
+        write_to_file, filename, kwargs...)
+    end
+  end
+  dynms_filepath = build_dynms_file(heta_dir; build_dir, kwargs...)
   return import_dynms(dynms_filepath, model_id; write_to_file, filename)
 end
 
