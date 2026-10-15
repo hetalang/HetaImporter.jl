@@ -78,36 +78,37 @@ function build_ode_system(
 end
 
 """
-    import_heta(heta_dir; model_id=nothing, write_to_file=false,
+    import_heta(heta_dir, model_id::Symbol=:nameless; write_to_file=false,
                 filename=nothing, kwargs...)
 
 Compile a Heta project to DynMS and delegate to [`import_dynms`](@ref) to
 construct a native [`HetaODESystem`](@ref). Remaining keyword arguments are forwarded to
-[`build_dynms_file`](@ref).
+[`build_dynms_file`](@ref). The selected model defaults to `:nameless` and must exist.
 """
 function import_heta(
-  heta_dir::AbstractString;
-  model_id::Union{Symbol,Nothing}=nothing,
+  heta_dir::AbstractString,
+  model_id::Symbol=:nameless;
   write_to_file::Bool=false,
   filename::Union{AbstractString,Nothing}=nothing,
   kwargs...,
 )
   dynms_filepath = build_dynms_file(heta_dir; kwargs...)
-  return import_dynms(dynms_filepath; model_id, write_to_file, filename)
+  return import_dynms(dynms_filepath, model_id; write_to_file, filename)
 end
 
 """
-    import_dynms(dynms_filepath; model_id=nothing, write_to_file=false,
+    import_dynms(dynms_filepath, model_id::Symbol=:nameless; write_to_file=false,
                  filename=nothing)
 
 Parse and validate a DynMS JSON file, convert it to a model set, and build the
-selected model as a native [`HetaODESystem`](@ref). `model_id` is required when
-there is more than one non-empty model. When `write_to_file=true`, generated
+selected model as a native [`HetaODESystem`](@ref). The selected model defaults
+to `:nameless` and must exist.
+When `write_to_file=true`, generated
 Julia source is also written to `filename`.
 """
 function import_dynms(
-  dynms_filepath::AbstractString;
-  model_id::Union{Symbol,Nothing}=nothing,
+  dynms_filepath::AbstractString,
+  model_id::Symbol=:nameless;
   write_to_file::Bool=false,
   filename::Union{AbstractString,Nothing}=nothing,
 )

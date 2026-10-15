@@ -14,20 +14,23 @@ The generated Julia file is intended to be loaded by simulation and parameter es
 
 ## Current interface
 
-Get a `HetaODESystem` when the Heta project contains exactly one model.
+Get the default `:nameless` model as a `HetaODESystem`.
 ```julia
 system = import_heta("path/to/heta-project")
 ```
 
 Get model `:my_model` as `HetaODESystem` from a Heta project.
 ```julia
-system = import_heta("path/to/heta-project"; model_id=:my_model)
+system = import_heta("path/to/heta-project", :my_model)
 ```
 
 Import a DynMS JSON file directly as `HetaODESystem`.
 ```julia
-system = import_dynms("path/to/output.dynms.json"; model_id=:my_model)
+system = import_dynms("path/to/output.dynms.json", :my_model)
 ```
+
+Both import functions default to `:nameless`. If the selected model does not
+exist, they throw an error, even if another model is the only one available.
 
 The processing stages can also be called separately:
 ```julia

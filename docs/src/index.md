@@ -33,13 +33,13 @@ joinpath(build_dir, "julia", "model.jl")
 
 ### Import Heta as `HetaODESystem`
 
-Pass the directory containing the Heta platform declaration (`platform.yml` or `platform.json`). `model_id` selects a model by its namespace ID; it can be omitted when the platform contains a single model.
+Pass the directory containing the Heta platform declaration (`platform.yml` or `platform.json`). The optional second positional argument, `model_id`, selects a model by its namespace ID and defaults to `:nameless`.
 
 ```julia
 using HetaImporter
 using SciMLBase
 
-sys = import_heta("path/to/heta/platform"; model_id=:my_model)
+sys = import_heta("path/to/heta/platform", :my_model)
 problem = ODEProblem(sys, (0.0, 100.0))
 ```
 
@@ -99,8 +99,7 @@ The same file can be written during import:
 
 ```julia
 sys = import_heta(
-  "path/to/heta/platform";
-  model_id=:my_model,
+  "path/to/heta/platform", :my_model;
   write_to_file=true,
   filename="my_model_ode.jl",
 )

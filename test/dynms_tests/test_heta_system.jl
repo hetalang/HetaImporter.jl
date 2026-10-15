@@ -6,7 +6,7 @@ using LinearAlgebra
   mktempdir() do directory
     filename = joinpath(directory, "mm_ode.jl")
     system = import_heta(
-      _dynms_model_dir("0-hello-world");
+      _dynms_model_dir("0-hello-world"), :mm;
       build_dir=joinpath(directory, "build"),
       log_level="error",
       write_to_file=true,
@@ -26,10 +26,15 @@ using LinearAlgebra
     @test data isa AbstractDict
     @test HetaImporter.validate_dynms(data) === nothing
     @test HetaImporter.convert_dynms(data) isa HetaImporter.DynMSModelSet
-    imported = import_dynms(dynms_path; model_id=:mm)
+    imported = import_dynms(dynms_path, :mm)
     @test imported isa HetaODESystem
     @test equations(imported) == equations(system)
-    @test_throws ArgumentError import_dynms(dynms_path; model_id=:missing)
+    @test_throws ArgumentError import_dynms(dynms_path, :missing)
+    @test_throws ArgumentError import_dynms(dynms_path)
+    @test_throws ArgumentError import_heta(
+      _dynms_model_dir("0-hello-world");
+      build_dir=joinpath(directory, "build"), log_level="error",
+    )
 
     invalid_path = joinpath(directory, "invalid.json")
     write(invalid_path, "{\"dynms\":\"unsupported\",\"models\":[]}")
@@ -46,6 +51,18 @@ using LinearAlgebra
     )
     @test collect(keys(systems)) == [:mm]
     @test systems[:mm] isa HetaODESystem
+  end
+end
+
+@testset "default nameless model" begin
+  mktempdir() do build_dir
+    system = import_heta(_dynms_model_dir("11-time-switcher"); build_dir, log_level="error")
+    @test nameof(system) === :nameless
+    dynms_path = joinpath(build_dir, "dynms", "output.dynms.json")
+    imported = import_dynms(dynms_path)
+    @test nameof(imported) === :nameless
+    @test equations(imported) == equations(system)
+    @test equations(import_dynms(dynms_path, :nameless)) == equations(system)
   end
 end
 
