@@ -44,8 +44,6 @@ model = HetaImporter.convert_dynms_model(data["models"][1]) # DynMSModel
 `build_dynms_file` compiles a Heta project and returns the DynMS file path;
 `parse_dynms` reads that file into an unvalidated dictionary. Dictionary conversion uses
 `convert_dynms` and `convert_dynms_model` instead of `parse_dynms` and
-`parse_dynms_model`. The former `load_dynms` pipeline is replaced by the
-explicit stages above, or `import_dynms` when a system is needed.
 
 Get all models as `OrderedDict{Symbol,HetaODESystem}` from a Heta project.
 ```julia
