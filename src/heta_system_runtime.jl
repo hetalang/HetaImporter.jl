@@ -252,11 +252,34 @@ end
 function _heta_problem_parameters(system::HetaODESystem, p)
   (isnothing(p) || p isa SciMLBase.NullParameters) &&
     return _heta_default_parameters(system)
+  if p isa AbstractDict || p isa AbstractVector{<:Pair} ||
+     (p isa AbstractVector && any(x -> x isa Pair, p))
+    return _heta_named_parameters(system, p)
+  end
   p isa AbstractVector || throw(ArgumentError(
-    "p must be an AbstractVector containing the tunable parameters for " *
+    "p must be a full tunable vector, an AbstractDict, or a vector of Symbol => value pairs for " *
     "HetaODESystem $(system.name), got $(typeof(p)).",
   ))
   return _heta_parameters(system, p)
+end
+
+function _heta_named_parameters(system::HetaODESystem, overrides)
+  defaults = system.dynms.parameters.tunable
+  updates = Dict{Symbol,Any}()
+  for entry in overrides
+    entry isa Pair || throw(ArgumentError("Named parameter overrides must be pairs."))
+    name, value = entry
+    name isa Symbol || throw(ArgumentError("Parameter override keys must be Symbols, got $(repr(name))."))
+    haskey(defaults, name) || throw(ArgumentError(
+      "$(repr(name)) is not a tunable parameter of HetaODESystem $(system.name).",
+    ))
+    haskey(updates, name) && throw(ArgumentError("Duplicate parameter override for $(repr(name))."))
+    value isa Number || throw(ArgumentError("Parameter override for $(repr(name)) must be numeric."))
+    updates[name] = value
+  end
+  isempty(updates) && return _heta_default_parameters(system)
+  values = [get(updates, name, default) for (name, default) in defaults]
+  return _heta_parameters(system, collect(promote(values...)))
 end
 
 function _heta_time_event_schedule(schedule_func, integrator)

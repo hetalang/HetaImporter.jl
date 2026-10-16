@@ -45,6 +45,23 @@ problem = ODEProblem(sys, (0.0, 100.0))
 
 The problem uses the initial conditions and parameter defaults from the Heta model. Active model events are attached automatically as callbacks. The time span uses the time units defined by the model.
 
+Override selected tunable parameters with a dictionary or a vector of pairs:
+
+```julia
+problem = ODEProblem(sys, (0.0, 100.0); p=Dict(:Vmax => 0.2))
+problem = ODEProblem(sys, (0.0, 100.0); p=[:Vmax => 0.2, :Km => 3.0])
+```
+
+Keys must be `Symbol`s naming tunable parameters. Unspecified tunables retain
+their model defaults; overrides are applied before computing derived parameters,
+discrete initial values, and initial states. The system defaults are not mutated.
+Unknown names, derived/discrete parameter names, and duplicate names in a pair
+vector are rejected. Any `AbstractDict` is supported. An empty dictionary or
+typed empty pair vector (`Pair{Symbol,Float64}[]`) uses all defaults.
+
+A numeric vector remains a full positional replacement and must contain every
+tunable in the order returned by `keys(parameters(sys).tunable)`.
+
 To solve the problem, load a solver package separately. For example, with `OrdinaryDiffEqTsit5` installed:
 
 ```julia
