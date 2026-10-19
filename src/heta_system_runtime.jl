@@ -365,11 +365,37 @@ function _heta_event_affect(affect!, saves_discrete)
   end
 end
 
-function _heta_callbacks(system::HetaODESystem, tspan)
+function _heta_events_active(system::HetaODESystem, overrides)
+  active = Dict(id => is_active(event) for (id, event) in merge_events(system.dynms))
+  isnothing(overrides) && return active
+  overrides isa Union{AbstractDict,AbstractVector} || throw(ArgumentError(
+    "events_active must be an AbstractDict or a vector of Symbol => Bool pairs.",
+  ))
+  all(entry -> entry isa Pair, overrides) || throw(ArgumentError(
+    "Event activation overrides must be pairs.",
+  ))
+  allunique(first(entry) for entry in overrides) || throw(ArgumentError(
+    "Event activation overrides must have unique event IDs.",
+  ))
+  for entry in overrides
+    id, value = entry
+    id isa Symbol || throw(ArgumentError("Event override keys must be Symbols, got $(repr(id))."))
+    haskey(active, id) || throw(ArgumentError(
+      "$(repr(id)) is not an event of HetaODESystem $(system.name).",
+    ))
+    value isa Bool || throw(ArgumentError("Event override for $(repr(id)) must be Bool."))
+    active[id] = value
+  end
+  return active
+end
+
+function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing)
+  active = _heta_events_active(system, events_active)
   code = system.generated_code
   callbacks = Any[]
 
   for (id, event) in code.time_events
+    active[id] || continue
     schedule_func = _heta_runtime_function(event.schedule_func)
     affect! = _heta_event_affect(
       _heta_runtime_function(event.affect_func),
@@ -394,6 +420,7 @@ function _heta_callbacks(system::HetaODESystem, tspan)
   end
 
   for (id, event) in code.continuous_events
+    active[id] || continue
     # Initial affect is applied if event.initial_affect is true and condition is nonnegative at the initial time
     initialize = _heta_event_initialize(event.initial_affect, value -> value >= zero(value))
     push!(callbacks, SciMLBase.ContinuousCallback(
@@ -407,6 +434,7 @@ function _heta_callbacks(system::HetaODESystem, tspan)
   end
 
   for (id, event) in code.discrete_events
+    active[id] || continue
     # Initial affect is applied if event.initial_affect is true and condition is satisfied at the initial time
     initialize = _heta_event_initialize(event.initial_affect, identity)
     push!(callbacks, SciMLBase.DiscreteCallback(
@@ -419,7 +447,8 @@ function _heta_callbacks(system::HetaODESystem, tspan)
     ))
   end
 
-  for event in values(code.stop_events)
+  for (id, event) in code.stop_events
+    active[id] || continue
     condition = _heta_runtime_function(event.condition_func)
     affect! = integrator -> SciMLBase.terminate!(integrator)
     # terminate! empties tstops. During initialization the solver still needs one
@@ -446,14 +475,42 @@ function SciMLBase.ODEFunction(system::HetaODESystem; kwargs...)
   )
 end
 
+"""
+    SciMLBase.ODEProblem(system::HetaODESystem, tspan;
+                        p=SciMLBase.NullParameters(), events_active=nothing, kwargs...)
+
+Construct an ODE problem using the model's initial conditions and parameter defaults.
+
+Use `p` to override tunable parameters:
+
+- An `AbstractDict` or vector of `Symbol => value` pairs updates selected tunable parameters,
+  for example `p=Dict(:Vmax => 0.2)` or `p=[:Vmax => 0.2, :Km => 3.0]`.
+  Unspecified tunables retain their model defaults. Keys must name tunable
+  parameters and values must be numeric; unknown names, derived/discrete
+  parameter names, and duplicate names in a pair vector are rejected.
+- A numeric vector replaces all tunables in the order returned by
+  `keys(parameters(system).tunable)` and must contain exactly that many values.
+- Omit `p`, pass `nothing` or `SciMLBase.NullParameters()`, or use an empty
+  dictionary or typed empty pair vector (`Pair{Symbol,Float64}[]`) to use defaults.
+
+Parameter overrides are applied before computing derived parameters, discrete
+initial values, and initial states.
+
+`events_active` accepts a dictionary or vector of `Symbol => Bool` pairs to
+override activation of named model events for this problem. Unspecified events
+retain their DynMS `active` defaults. The system and its defaults are not mutated.
+
+The `u0` and `callback` keywords cannot be supplied; initial conditions and
+callbacks are constructed from the model.
+"""
 function SciMLBase.ODEProblem(
   system::HetaODESystem,
   tspan::Tuple;
   p=SciMLBase.NullParameters(),
-  callback=nothing,
+  events_active=nothing,
   kwargs...,
 )
-  callback === nothing || throw(ArgumentError(
+  haskey(kwargs, :callback) && throw(ArgumentError(
     "External callbacks are not supported for HetaODESystem. " *
     "Define callbacks in the Heta model.",
   ))
@@ -466,7 +523,7 @@ function SciMLBase.ODEProblem(
   parameters = _heta_problem_parameters(system, p)
   initial_state = _heta_runtime_function(system.generated_code.u0_func)
   ode_function = SciMLBase.ODEFunction(system)
-  heta_callback = _heta_callbacks(system, tspan)
+  heta_callback = _heta_callbacks(system, tspan, events_active)
 
   if isnothing(heta_callback)
     return SciMLBase.ODEProblem(ode_function, initial_state, tspan, parameters; kwargs...)

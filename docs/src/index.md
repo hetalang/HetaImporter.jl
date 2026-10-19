@@ -43,7 +43,23 @@ sys = import_heta("path/to/heta/platform", :my_model)
 problem = ODEProblem(sys, (0.0, 100.0))
 ```
 
-The problem uses the initial conditions and parameter defaults from the Heta model. Active model events are attached automatically as callbacks. The time span uses the time units defined by the model.
+The problem uses the initial conditions and parameter defaults from the Heta model. Active model events are attached automatically as callbacks.
+
+Override event activation for a particular problem using `events_active`:
+
+```julia
+problem = ODEProblem(sys, (0.0, 100.0);
+    events_active=Dict(:dosing => false, :rescue_dose => true))
+# A vector of pairs is also supported:
+problem = ODEProblem(sys, (0.0, 100.0); events_active=[:dosing => false])
+```
+
+Keys must be `Symbol`s naming existing model events, and values must be `Bool`s.
+Unspecified events retain their DynMS `active` defaults; `nothing` (the default)
+or an empty collection uses all defaults. Unknown names and duplicate names in
+a pair vector are rejected. These overrides apply to time, continuous, discrete,
+and stop events, including events inactive in the model. The system defaults are not mutated, so the same
+system can be reused for different scenarios. 
 
 Override selected tunable parameters with a dictionary or a vector of pairs:
 

@@ -4,6 +4,8 @@
 Native Julia representation of a parsed Heta ODE model. `dynms` retains the
 semantic model for inspection and `generated_code` contains the fixed,
 uncompiled Julia functions generated once by [`build_ode_system`](@ref).
+Functions are generated for all events, including those inactive by default;
+event activation is resolved separately for each `ODEProblem`.
 
 `parameter_index` indexes the complete flattened parameter container (tunables,
 derived, then discretes). `discrete_index` indexes only the discrete portion and

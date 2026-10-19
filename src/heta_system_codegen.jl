@@ -229,7 +229,6 @@ end
 function _heta_time_event_codes(dynms; name=dynms.id)
   result = OrderedDict{Symbol,DynMSJuliaTimeEventCode}()
   for (id, event) in dynms.time_events
-    is_active(event) || continue
     result[id] = DynMSJuliaTimeEventCode(
       id,
       _heta_schedule_function(dynms, event; name),
@@ -243,7 +242,6 @@ end
 function _heta_conditional_event_codes(dynms, events; name=dynms.id)
   result = OrderedDict{Symbol,DynMSJuliaConditionalEventCode}()
   for (id, event) in events
-    is_active(event) || continue
     result[id] = DynMSJuliaConditionalEventCode(
       id,
       _heta_condition_function(dynms, event; name),
@@ -257,7 +255,6 @@ end
 function _heta_stop_event_codes(dynms; name=dynms.id)
   result = OrderedDict{Symbol,DynMSJuliaStopEventCode}()
   for (id, event) in dynms.stop_events
-    is_active(event) || continue
     result[id] = DynMSJuliaStopEventCode(
       id,
       _heta_condition_function(dynms, event; name),

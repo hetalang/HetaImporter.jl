@@ -39,6 +39,7 @@ end
   @test isempty(problem.p.discrete)
   @test_throws ArgumentError ODEProblem(system, (0.0, 10.0); u0=[1.0, 0.0])
   @test_throws ArgumentError ODEProblem(system, (0.0, 10.0); callback=identity)
+  @test_throws ArgumentError ODEProblem(system, (0.0, 10.0); callback=nothing)
 
   solution = solve(problem, Tsit5(); saveat=1.0)
   @test size(solution) == (2, 11)
@@ -49,7 +50,7 @@ end
   @test solution.ps[[:Vmax, :Km]] == [0.1, 2.5]
 end
 
-@testset "Integer time span with fractional time events" begin
+@testset "Time events and activation overrides" begin
   system = import_heta(_dynms_model_dir("11-time-switcher"))
   problem = ODEProblem(system, (0, 30); p=[0.01, 0.01, 5.5])
   solution = solve(problem, Tsit5())
@@ -57,4 +58,23 @@ end
   @test 5.5 in solution.t
   @test 29.5 in solution.t
   @test last(solution[:s2]) ≈ 4.0
+
+  @test length(problem.kwargs[:callback].discrete_callbacks) == 2
+
+  # sw1 is inactive in the model; enabling it adds dosing callbacks.
+  enabled = ODEProblem(system, (0, 30); events_active=Dict(:sw1 => true))
+  @test length(enabled.kwargs[:callback].discrete_callbacks) == 3
+  enabled_solution = solve(enabled, Tsit5())
+  @test SciMLBase.successful_retcode(enabled_solution)
+  @test last(enabled_solution[:a0]) > 0.0
+  @test last(enabled_solution[:comp1]) ≈ 6.0
+
+  # sw2 is active by default; disabling it removes its callback and effects.
+  disabled = ODEProblem(system, (0, 30); events_active=[:sw2 => false])
+  @test length(disabled.kwargs[:callback].discrete_callbacks) == 1
+  disabled_solution = solve(disabled, Tsit5())
+  @test SciMLBase.successful_retcode(disabled_solution)
+  @test last(disabled_solution[:s2]) == 0.0
+  @test !events(system).time[:sw1].is_active
+  @test events(system).time[:sw2].is_active
 end
