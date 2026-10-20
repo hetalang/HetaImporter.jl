@@ -20,4 +20,7 @@
   @test isempty(model.continuous_events)
   @test isempty(model.discrete_events)
   @test isempty(model.stop_events)
+
+  @test HetaImporter._convert_dynms_expr(["Ln", "S"]; nanmath=true) == :(NaNMath.log(S))
+  @test HetaImporter._convert_dynms_expr(["Power", "S", "P"]; nanmath=true) == :(NaNMath.pow(S, P))
 end

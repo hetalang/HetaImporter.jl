@@ -187,7 +187,7 @@ function validate_semantic_dynms(dynms_dict::AbstractDict, dynms_version::Abstra
 end
 
 """
-    convert_dynms(data::AbstractDict)
+    convert_dynms(data::AbstractDict; nanmath::Bool=false)
 
 Convert an already-parsed, validated DynMS JSON dictionary into a `DynMSModelSet`.
 
@@ -195,14 +195,17 @@ Use [`parse_dynms`](@ref) to read a file and [`validate_dynms`](@ref) before
 conversion. The returned specification contains model definitions, Julia expression trees for
 mathematical expressions, event definitions, and metadata from the DynMS
 generator.
+
+Set `nanmath=true` to convert powers, square roots, and logarithms to
+NaNMath calls. This option applies to every model expression.
 """
-function convert_dynms(data::AbstractDict)
+function convert_dynms(data::AbstractDict; nanmath::Bool=false)
   dynms_version = string(get(data, "dynms", ""))
 
   dynms_models = OrderedDict{Symbol,DynMSModel}()
   for model in get(data, "models", Any[])
     isempty_dynms_model(model) && continue
-    dynms_model = convert_dynms_model(model)
+    dynms_model = convert_dynms_model(model; nanmath)
     dynms_models[dynms_model.id] = dynms_model
   end
  
@@ -213,15 +216,16 @@ function convert_dynms(data::AbstractDict)
 end
 
 """
-    convert_dynms_model(model::AbstractDict)
+    convert_dynms_model(model::AbstractDict; nanmath::Bool=false)
 
 Convert one validated DynMS model dictionary into a `DynMSModel`.
 
 This is mainly useful when working with a model entry extracted from an
 already-validated DynMS document. To import a file as a system, use
 [`import_dynms`](@ref); for a Heta project, use [`import_heta`](@ref).
+The `nanmath` option has the same meaning as in [`convert_dynms`](@ref).
 """
-convert_dynms_model(model::AbstractDict) = _convert_dynms_model(model)
+convert_dynms_model(model::AbstractDict; nanmath::Bool=false) = _convert_dynms_model(model; nanmath)
 
 function isempty_dynms_model(model::AbstractDict)
   return all(isempty(get(model, key, Any[])) for key in (
@@ -229,16 +233,16 @@ function isempty_dynms_model(model::AbstractDict)
   ))
 end
 
-function _convert_dynms_model(model::AbstractDict)
+function _convert_dynms_model(model::AbstractDict; nanmath::Bool=false)
 
-  assignment_rules = _convert_dynms_assignments(model)
-  states = _convert_dynms_states(model)
-  time_events = _convert_dynms_time_events(model)
-  continuous_events = _convert_dynms_continuous_events(model)
-  discrete_events = _convert_dynms_discrete_events(model)
-  stop_events = _convert_dynms_stop_events(model)
+  assignment_rules = _convert_dynms_assignments(model; nanmath)
+  states = _convert_dynms_states(model; nanmath)
+  time_events = _convert_dynms_time_events(model; nanmath)
+  continuous_events = _convert_dynms_continuous_events(model; nanmath)
+  discrete_events = _convert_dynms_discrete_events(model; nanmath)
+  stop_events = _convert_dynms_stop_events(model; nanmath)
   parameters = _convert_dynms_parameters(
-    model, time_events, continuous_events, discrete_events,
+    model, time_events, continuous_events, discrete_events; nanmath,
   )
   observables = _convert_dynms_observables(model)
 
@@ -255,7 +259,7 @@ function _convert_dynms_model(model::AbstractDict)
   )
 end
 
-function _convert_dynms_parameters(model::AbstractDict, event_groups...)
+function _convert_dynms_parameters(model::AbstractDict, event_groups...; nanmath::Bool=false)
   affected = Set{Symbol}()
   for event in Iterators.flatten(values(group) for group in event_groups)
     union!(affected, keys(event.discrete_affects))
@@ -265,7 +269,7 @@ function _convert_dynms_parameters(model::AbstractDict, event_groups...)
   for state in _dynms_static_defs(model)
     id = Symbol(string(state["id"]))
     initial = _convert_dynms_numeric_expr(
-      get(state, "initial", 0.0), "static state '$id' initial value",
+      get(state, "initial", 0.0), "static state '$id' initial value"; nanmath,
     )
     (id in affected ? discrete : derived)[id] = initial
   end
@@ -300,16 +304,16 @@ function _dynms_event_defs(model::AbstractDict)
   return get(model, "events", Any[])
 end
 
-function _convert_dynms_assignments(model::AbstractDict)
+function _convert_dynms_assignments(model::AbstractDict; nanmath::Bool=false)
   assignment_rules = OrderedDict{Symbol,DynMSExpr}()
   for assignment in get(model, "assignments", Any[])
     id = Symbol(string(assignment["id"]))
-    assignment_rules[id] = _convert_dynms_numeric_expr(assignment["rhs"], "assignment '$id'")
+    assignment_rules[id] = _convert_dynms_numeric_expr(assignment["rhs"], "assignment '$id'"; nanmath)
   end
   return assignment_rules
 end
 
-function _convert_dynms_states(model::AbstractDict)
+function _convert_dynms_states(model::AbstractDict; nanmath::Bool=false)
   states = OrderedDict{Symbol,DynMSState}()
   for state in _dynms_dynamic_defs(model)
     id = string(state["id"])
@@ -317,48 +321,48 @@ function _convert_dynms_states(model::AbstractDict)
       throw(ArgumentError("DynMS dynamic state '$id' does not include a derivative."))
 
     states[Symbol(id)] = DynMSState(
-      _convert_dynms_numeric_expr(get(state, "initial", 0.0), "dynamic state '$id' initial value"),
-      _convert_dynms_numeric_expr(state["derivative"], "dynamic state '$id' derivative"),
+      _convert_dynms_numeric_expr(get(state, "initial", 0.0), "dynamic state '$id' initial value"; nanmath),
+      _convert_dynms_numeric_expr(state["derivative"], "dynamic state '$id' derivative"; nanmath),
       Bool(get(state, "algebraic", false))
     )
   end
   return states
 end
 
-function _convert_dynms_time_events(model::AbstractDict)
+function _convert_dynms_time_events(model::AbstractDict; nanmath::Bool=false)
   events = OrderedDict{Symbol,DynMSTimeEvent}()
   for event in _dynms_time_event_defs(model)
-    parsed = _convert_dynms_time_event(model, event)
+    parsed = _convert_dynms_time_event(model, event; nanmath)
     events[parsed.id] = parsed
   end
   return events
 end
 
-function _convert_dynms_continuous_events(model::AbstractDict)
+function _convert_dynms_continuous_events(model::AbstractDict; nanmath::Bool=false)
   events = OrderedDict{Symbol,DynMSContinuousEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :continuous || continue
-    parsed = _convert_dynms_continuous_event(model, event)
+    parsed = _convert_dynms_continuous_event(model, event; nanmath)
     events[parsed.id] = parsed
   end
   return events
 end
 
-function _convert_dynms_discrete_events(model::AbstractDict)
+function _convert_dynms_discrete_events(model::AbstractDict; nanmath::Bool=false)
   events = OrderedDict{Symbol,DynMSDiscreteEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :discrete || continue
-    parsed = _convert_dynms_discrete_event(model, event)
+    parsed = _convert_dynms_discrete_event(model, event; nanmath)
     events[parsed.id] = parsed
   end
   return events
 end
 
-function _convert_dynms_stop_events(model::AbstractDict)
+function _convert_dynms_stop_events(model::AbstractDict; nanmath::Bool=false)
   events = OrderedDict{Symbol,DynMSStopEvent}()
   for event in _dynms_event_defs(model)
     _dynms_event_kind(event) == :stop || continue
-    parsed = _convert_dynms_stop_event(event)
+    parsed = _convert_dynms_stop_event(event; nanmath)
     events[parsed.id] = parsed
   end
   return events
@@ -368,14 +372,14 @@ function _convert_dynms_observables(model::AbstractDict)
   return Symbol[Symbol(string(obs["symbol"])) for obs in get(model, "observables", Any[])]
 end
 
-function _convert_dynms_time_event(model::AbstractDict, event)
+function _convert_dynms_time_event(model::AbstractDict, event; nanmath::Bool=false)
   trigger = event["trigger"]
-  state_affects, discrete_affects = _convert_dynms_event_affects(model, event)
+  state_affects, discrete_affects = _convert_dynms_event_affects(model, event; nanmath)
   return DynMSTimeEvent(
     Symbol(string(event["id"])),
-    _convert_dynms_value(get(trigger, "start", 0.0)),
-    _convert_dynms_optional_value(get(trigger, "period", nothing)),
-    _convert_dynms_optional_value(get(trigger, "stop", nothing)),
+    _convert_dynms_value(get(trigger, "start", 0.0); nanmath),
+    _convert_dynms_optional_value(get(trigger, "period", nothing); nanmath),
+    _convert_dynms_optional_value(get(trigger, "stop", nothing); nanmath),
     state_affects,
     discrete_affects,
     Bool(get(trigger, "atStart", false)),
@@ -383,11 +387,11 @@ function _convert_dynms_time_event(model::AbstractDict, event)
   )
 end
 
-function _convert_dynms_continuous_event(model::AbstractDict, event)
-  state_affects, discrete_affects = _convert_dynms_event_affects(model, event)
+function _convert_dynms_continuous_event(model::AbstractDict, event; nanmath::Bool=false)
+  state_affects, discrete_affects = _convert_dynms_event_affects(model, event; nanmath)
   return DynMSContinuousEvent(
     Symbol(string(event["id"])),
-    _convert_dynms_condition(event["trigger"]["rhs"]),
+    _convert_dynms_condition(event["trigger"]["rhs"]; nanmath),
     state_affects,
     discrete_affects,
     Bool(get(event["trigger"], "atStart", false)),
@@ -395,11 +399,11 @@ function _convert_dynms_continuous_event(model::AbstractDict, event)
   )
 end
 
-function _convert_dynms_discrete_event(model::AbstractDict, event)
-  state_affects, discrete_affects = _convert_dynms_event_affects(model, event)
+function _convert_dynms_discrete_event(model::AbstractDict, event; nanmath::Bool=false)
+  state_affects, discrete_affects = _convert_dynms_event_affects(model, event; nanmath)
   return DynMSDiscreteEvent(
     Symbol(string(event["id"])),
-    _convert_dynms_condition(event["trigger"]["rhs"]),
+    _convert_dynms_condition(event["trigger"]["rhs"]; nanmath),
     state_affects,
     discrete_affects,
     Bool(get(event["trigger"], "atStart", false)),
@@ -407,16 +411,16 @@ function _convert_dynms_discrete_event(model::AbstractDict, event)
   )
 end
 
-function _convert_dynms_stop_event(event)
+function _convert_dynms_stop_event(event; nanmath::Bool=false)
   return DynMSStopEvent(
     Symbol(string(event["id"])),
-    _convert_dynms_condition(event["trigger"]["rhs"]),
+    _convert_dynms_condition(event["trigger"]["rhs"]; nanmath),
     Bool(get(event["trigger"], "atStart", false)),
     Bool(get(event, "active", true))
   )
 end
 
-function _convert_dynms_event_affects(model::AbstractDict, event)
+function _convert_dynms_event_affects(model::AbstractDict, event; nanmath::Bool=false)
   dynamic_state_ids = Set(string(state["id"]) for state in _dynms_dynamic_defs(model))
   discrete_ids = Set(string(state["id"]) for state in _dynms_static_defs(model))
   state_affects = OrderedDict{Symbol,DynMSExpr}()
@@ -425,7 +429,7 @@ function _convert_dynms_event_affects(model::AbstractDict, event)
   for action in get(event, "actions", Any[])
     state_id = string(action["state"])
     target = Symbol(state_id)
-    rhs = _convert_dynms_numeric_expr(action["rhs"], "event $(event["id"]) update to '$state_id'")
+    rhs = _convert_dynms_numeric_expr(action["rhs"], "event $(event["id"]) update to '$state_id'"; nanmath)
 
     if state_id in dynamic_state_ids
       state_affects[target] = rhs
@@ -467,42 +471,42 @@ function _dynms_event_kind(event)
   throw(ArgumentError("Unsupported DynMS event trigger type/detection combination: type='$trigger_type', detection='$detection_type'."))
 end
 
-function _convert_dynms_optional_value(value)
+function _convert_dynms_optional_value(value; nanmath::Bool=false)
   isnothing(value) && return nothing
-  return _convert_dynms_value(value)
+  return _convert_dynms_value(value; nanmath)
 end
 
-function _convert_dynms_value(value)
-  parsed = _convert_dynms_expr(value)
+function _convert_dynms_value(value; nanmath::Bool=false)
+  parsed = _convert_dynms_expr(value; nanmath)
   parsed isa Float64 && return parsed
   parsed isa Symbol && return parsed
   throw(ArgumentError("DynMS time-event value must be numeric or symbolic, got: $parsed"))
 end
 
-function _convert_dynms_condition(expr)
-  parsed = _convert_dynms_expr(expr)
+function _convert_dynms_condition(expr; nanmath::Bool=false)
+  parsed = _convert_dynms_expr(expr; nanmath)
   parsed isa Union{Expr,Symbol} && return parsed
   throw(ArgumentError("DynMS event condition must parse to Expr or Symbol, got: $parsed"))
 end
 
-function _convert_dynms_numeric_expr(expr, context)
-  parsed = _convert_dynms_expr(expr)
+function _convert_dynms_numeric_expr(expr, context; nanmath::Bool=false)
+  parsed = _convert_dynms_expr(expr; nanmath)
   parsed isa Bool &&
     throw(ArgumentError("DynMS $context must be numeric, got Boolean: $parsed"))
   return parsed::DynMSExpr
 end
 
-function _convert_dynms_expr(expr)
+function _convert_dynms_expr(expr; nanmath::Bool=false)
   payload = _dynms_expr_payload(expr)
   payload isa Bool && return payload
   payload isa Number && return Float64(payload)
 
   try
     mathjson_expr = parse(MathJSON.MathJSONFormat, JSON.json(payload))
-    return _dynms_mathjson_to_julia(mathjson_expr)
+    return _dynms_mathjson_to_julia(mathjson_expr; nanmath)
   catch err
     @warn "MathJSON.jl failed to parse DynMS expression; using fallback parser." expr exception=(err, catch_backtrace())
-    return _dynms_raw_expr_to_julia(payload)
+    return _dynms_raw_expr_to_julia(payload; nanmath)
   end
 end
 
@@ -517,24 +521,24 @@ function _dynms_expr_payload(expr)
   return expr
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.NumberExpr)
+function _dynms_mathjson_to_julia(expr::MathJSON.NumberExpr; nanmath::Bool=false)
   return Float64(expr.value)
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.SymbolExpr)
+function _dynms_mathjson_to_julia(expr::MathJSON.SymbolExpr; nanmath::Bool=false)
   return _dynms_symbol_to_julia(expr.name)
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.StringExpr)
+function _dynms_mathjson_to_julia(expr::MathJSON.StringExpr; nanmath::Bool=false)
   throw(ArgumentError("Unsupported DynMS MathJSON string literal: $(expr.value)"))
 end
 
-function _dynms_mathjson_to_julia(expr::MathJSON.FunctionExpr)
-  args = Any[_dynms_mathjson_to_julia(arg) for arg in expr.arguments]
-  return _dynms_operator_to_julia(expr.operator, args)
+function _dynms_mathjson_to_julia(expr::MathJSON.FunctionExpr; nanmath::Bool=false)
+  args = Any[_dynms_mathjson_to_julia(arg; nanmath) for arg in expr.arguments]
+  return _dynms_operator_to_julia(expr.operator, args; nanmath)
 end
 
-function _dynms_raw_expr_to_julia(payload)
+function _dynms_raw_expr_to_julia(payload; nanmath::Bool=false)
   if payload isa Bool
     return payload
   elseif payload isa Number
@@ -544,13 +548,13 @@ function _dynms_raw_expr_to_julia(payload)
   elseif payload isa AbstractVector
     isempty(payload) && throw(ArgumentError("DynMS MathJSON expression cannot be an empty array."))
     operator = Symbol(payload[1])
-    args = Any[_dynms_raw_expr_to_julia(arg) for arg in payload[2:end]]
-    return _dynms_operator_to_julia(operator, args)
+    args = Any[_dynms_raw_expr_to_julia(arg; nanmath) for arg in payload[2:end]]
+    return _dynms_operator_to_julia(operator, args; nanmath)
   elseif payload isa AbstractDict
     haskey(payload, "num") && return _dynms_parse_mathjson_number(payload["num"])
     haskey(payload, "sym") && return _dynms_symbol_to_julia(string(payload["sym"]))
     haskey(payload, "str") && throw(ArgumentError("Unsupported DynMS MathJSON string literal: $(payload["str"])"))
-    haskey(payload, "fn") && return _dynms_raw_expr_to_julia(payload["fn"])
+    haskey(payload, "fn") && return _dynms_raw_expr_to_julia(payload["fn"]; nanmath)
   end
 
   throw(ArgumentError("Unsupported DynMS expression: $payload"))
@@ -577,7 +581,19 @@ function _dynms_symbol_to_julia(name::AbstractString)
   return Symbol(name)
 end
 
-function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any})
+function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any}; nanmath::Bool=false)
+  if nanmath
+    operator == :Power && return :(NaNMath.pow($(args[1]), $(args[2])))
+    operator == :Square && return :(NaNMath.pow($(only(args)), 2))
+    operator == :Root && return length(args) == 1 ?
+      :(NaNMath.sqrt($(only(args)))) : :(NaNMath.pow($(args[1]), 1 / $(args[2])))
+    operator == :Sqrt && return :(NaNMath.sqrt($(only(args))))
+    (operator == :Ln || (operator == :Log && length(args) == 1)) &&
+      return :(NaNMath.log($(only(args))))
+    operator in (:Log10, :Lg) && return :(NaNMath.log10($(only(args))))
+    operator in (:Log2, :Lb) && return :(NaNMath.log2($(only(args))))
+  end
+
   operator == :Add && return _dynms_call(:+, args; empty=0.0)
   operator == :Multiply && return _dynms_call(:*, args; empty=1.0)
   operator == :Negate && return :(-$(only(args)))

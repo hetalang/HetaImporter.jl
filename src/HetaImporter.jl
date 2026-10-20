@@ -3,6 +3,7 @@ module HetaImporter
 using JSON
 using JSONSchema
 using MathJSON
+import NaNMath
 using RuntimeGeneratedFunctions
 using DataStructures
 using DiffEqCallbacks

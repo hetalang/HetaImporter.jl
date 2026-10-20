@@ -33,6 +33,11 @@ HetaImporter.convert_dynms_model
 
 ## Heta Import and ODE Construction
 
+Use `import_heta(path; nanmath=true)` or `import_dynms(path; nanmath=true)`
+to convert powers, square roots, and unary logarithms (`log`, `log10`, `log2`)
+to NaNMath calls. The default is `false`. This applies to initialization,
+equations, assignments/observables, and events.
+
 ```@docs
 import_heta
 import_heta_all
