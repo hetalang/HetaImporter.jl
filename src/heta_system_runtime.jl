@@ -356,12 +356,17 @@ function _heta_event_initialize(
   end
 end
 
-# if saves_discrete is true applies affect and saves the discrete state
+# Solvers can opt into post-event step-size selection via an extension.
+# Sundials handles discontinuities through its own callback reinitialization
+# and does not implement SciMLBase.auto_dt_reset!.
+_heta_reset_event_dt!(integrator) = nothing
+
 function _heta_event_affect(affect!, saves_discrete)
-  saves_discrete || return affect!
   return function (integrator)
     affect!(integrator)
-    SciMLBase.save_discretes!(integrator, 1)
+    saves_discrete && SciMLBase.save_discretes!(integrator, 1)
+    _heta_reset_event_dt!(integrator)
+    return nothing
   end
 end
 
