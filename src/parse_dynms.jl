@@ -73,8 +73,19 @@ has_algebraic(model::DynMSModel) = any(is_algebraic, values(model.states))
 
 merge_events(model::DynMSModel) = merge(model.time_events, model.continuous_events, model.discrete_events, model.stop_events)
 
+struct DynMSScenario
+  id::Symbol
+  model::Symbol
+  tspan::Tuple{Float64, Float64}
+  saveat::Union{Nothing,Vector{Float64}}
+  parameters::Union{Nothing,Dict{Symbol,Float64}}
+  events_active::Union{Nothing,Dict{Symbol,Bool}}
+  events_save::Union{Nothing,Dict{Symbol,Tuple{Bool, Bool}}}
+end
+
 struct DynMSModelSet
   models::OrderedDict{Symbol,DynMSModel}
+  scenarios::OrderedDict{Symbol,DynMSScenario}
   version::String
 end
 
@@ -212,7 +223,59 @@ function convert_dynms(data::AbstractDict; nanmath::Bool=false)
   isempty(dynms_models) && 
     throw(ArgumentError("No non-empty models found in the provided DynMS JSON."))
   
-  return DynMSModelSet(dynms_models, dynms_version)
+  scenarios = OrderedDict{Symbol,DynMSScenario}()
+  for scenario in get(data, "scenarios", Any[])
+    parsed = convert_dynms_scenario(scenario)
+    scenarios[parsed.id] = parsed
+  end
+
+  return DynMSModelSet(dynms_models, scenarios, dynms_version)
+end
+
+"""
+    convert_dynms_scenario(scenario::AbstractDict)
+
+Convert a DynMS scenario dictionary into a `DynMSScenario`. The required
+`tspan` must contain two numeric values. Omitted or null optional settings
+become `nothing`; explicitly empty vectors and dictionaries are preserved.
+"""
+function convert_dynms_scenario(scenario::AbstractDict)
+  tspan = get(scenario, "tspan", nothing)
+  saveat = get(scenario, "saveat", nothing)
+  parameters = get(scenario, "parameters", nothing)
+  events_active = get(scenario, "eventsActive", nothing)
+  events_save = get(scenario, "eventsSave", nothing)
+
+  tspan isa AbstractVector && length(tspan) == 2 &&
+    all(value -> value isa Real && !(value isa Bool), tspan) ||
+    throw(ArgumentError(
+      "DynMS scenario '$(scenario["id"])' requires a tspan array with two numeric values.",
+    ))
+  tspan = (Float64(tspan[1]), Float64(tspan[2]))
+
+  converted_events_save = isnothing(events_save) ? nothing : Dict{Symbol,Tuple{Bool,Bool}}()
+  if !isnothing(events_save)
+    for (id, positions) in events_save
+      length(positions) == 2 || throw(ArgumentError(
+        "DynMS scenario '$(scenario["id"])' eventsSave entry '$id' must contain two values.",
+      ))
+      converted_events_save[Symbol(id)] = (Bool(positions[1]), Bool(positions[2]))
+    end
+  end
+
+  return DynMSScenario(
+    Symbol(scenario["id"]),
+    Symbol(scenario["model"]),
+    tspan,
+    isnothing(saveat) ? nothing : Float64[Float64(value) for value in saveat],
+    isnothing(parameters) ? nothing : Dict{Symbol,Float64}(
+      Symbol(id) => Float64(value) for (id, value) in parameters
+    ),
+    isnothing(events_active) ? nothing : Dict{Symbol,Bool}(
+      Symbol(id) => Bool(value) for (id, value) in events_active
+    ),
+    converted_events_save,
+  )
 end
 
 """

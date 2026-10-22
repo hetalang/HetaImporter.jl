@@ -1,0 +1,28 @@
+{
+  "builderVersion": "*",
+  "id": "template",
+  "notes": "platform notes",
+  "version": "v0.1.0",
+  "license": "UNLICENSED",
+  "options": {},
+  "importModule": {
+    "type": "heta",
+    "source": "src/index.heta"
+  },
+  "export": [
+    {
+      "format": "JSON"
+    },
+    {
+      "format": "YAML"
+    },
+    {
+      "format": "XLSX",
+      "omitRows": 3,
+      "splitByClass": true
+    },
+    {
+      "format": "Julia"
+    }
+  ]
+}
