@@ -125,6 +125,7 @@ initial_conditions(sys)  # state initial-condition expressions
 parameters(sys)          # tunable defaults and derived/discrete expressions
 observed(sys)            # assignment-rule expressions
 events(sys)              # time, continuous, discrete, and stop events
+scenarios(sys)           # simulation regimens referencing this model
 ```
 
 To save the generated native functions for inspection, use [`write_generated_code`](@ref):

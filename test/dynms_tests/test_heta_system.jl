@@ -17,6 +17,7 @@ using LinearAlgebra
     @test parameters(system).tunable[:Vmax] == 0.1
     @test haskey(observed(system), :S)
     @test isempty(events(system).time)
+    @test isempty(scenarios(system))
 
     dynms_path = joinpath(directory, "build", "dynms", "output.dynms.json")
     imported = import_dynms(dynms_path, :mm)

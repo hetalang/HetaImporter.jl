@@ -73,6 +73,6 @@ export import_heta, import_heta_all, import_dynms
 export build_dynms_file
 export HetaODESystem, HetaParameters
 export write_generated_code
-export equations, initial_conditions, parameters, observed, events
+export equations, initial_conditions, parameters, observed, events, scenarios
 
 end

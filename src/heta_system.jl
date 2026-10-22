@@ -6,6 +6,7 @@ semantic model for inspection and `generated_code` contains the fixed,
 uncompiled Julia functions generated once by [`build_ode_system`](@ref).
 Functions are generated for all events, including those inactive by default;
 event activation is resolved separately for each `ODEProblem`.
+`scenarios` contains the simulation regimens referencing this model, keyed by ID.
 
 `parameter_index` indexes the complete flattened parameter container (tunables,
 derived, then discretes). `discrete_index` indexes only the discrete portion and
@@ -14,6 +15,7 @@ is also used as its parameter-timeseries index.
 struct HetaODESystem{GC}
   name::Symbol
   dynms::DynMSModel
+  scenarios::OrderedDict{Symbol,DynMSScenario}
   state_index::Dict{Symbol,Int}
   parameter_index::Dict{Symbol,Int}
   discrete_index::Dict{Symbol,Int}
@@ -76,7 +78,11 @@ function build_ode_system(
   haskey(model_set.models, model_id) || throw(ArgumentError(
     "model_id $model_id not found in model_set",
   ))
-  return build_ode_system(model_set.models[model_id]; kwargs...)
+  model_scenarios = OrderedDict{Symbol,DynMSScenario}(
+    id => scenario for (id, scenario) in model_set.scenarios
+    if scenario.model == model_id
+  )
+  return build_ode_system(model_set.models[model_id]; scenarios=model_scenarios, kwargs...)
 end
 
 """
@@ -165,10 +171,11 @@ function import_heta_all(
   model_set = convert_dynms(data; nanmath)
   return OrderedDict(
     id => build_ode_system(
-      model;
+      model_set;
+      model_id=id,
       write_to_file,
       filename=write_to_file ? joinpath(output_dir, "$(id)_ode.jl") : nothing,
     )
-    for (id, model) in model_set.models
+    for id in keys(model_set.models)
   )
 end

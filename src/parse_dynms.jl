@@ -81,6 +81,7 @@ struct DynMSScenario
   parameters::Union{Nothing,Dict{Symbol,Float64}}
   events_active::Union{Nothing,Dict{Symbol,Bool}}
   events_save::Union{Nothing,Dict{Symbol,Tuple{Bool, Bool}}}
+  observables::Union{Nothing,Vector{Symbol}}
 end
 
 struct DynMSModelSet
@@ -245,6 +246,7 @@ function convert_dynms_scenario(scenario::AbstractDict)
   parameters = get(scenario, "parameters", nothing)
   events_active = get(scenario, "eventsActive", nothing)
   events_save = get(scenario, "eventsSave", nothing)
+  observables = get(scenario, "observables", nothing)
 
   tspan isa AbstractVector && length(tspan) == 2 &&
     all(value -> value isa Real && !(value isa Bool), tspan) ||
@@ -275,6 +277,7 @@ function convert_dynms_scenario(scenario::AbstractDict)
       Symbol(id) => Bool(value) for (id, value) in events_active
     ),
     converted_events_save,
+    isnothing(observables) ? nothing : Symbol[Symbol(id) for id in observables],
   )
 end
 

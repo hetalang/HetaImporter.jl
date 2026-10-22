@@ -332,9 +332,9 @@ function write_generated_code(system::HetaODESystem, filename::AbstractString)
 end
 
 function _build_ode_system(
-  dynms::DynMSModel,
-  ;
+  dynms::DynMSModel;
   name::Symbol=dynms.id,
+  scenarios::OrderedDict{Symbol,DynMSScenario}=OrderedDict{Symbol,DynMSScenario}(),
   write_to_file::Bool=false,
   filename::Union{AbstractString,Nothing}=nothing,
 )
@@ -343,6 +343,7 @@ function _build_ode_system(
   system = HetaODESystem(
     name,
     dynms,
+    scenarios,
     state_index,
     parameter_index,
     discrete_index,

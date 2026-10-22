@@ -51,4 +51,5 @@ initial_conditions
 parameters
 observed
 events
+scenarios
 ```

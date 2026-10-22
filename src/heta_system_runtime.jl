@@ -48,6 +48,9 @@ events(system::HetaODESystem) = (
   stop=copy(system.dynms.stop_events),
 )
 
+"""Return the scenarios for this model, keyed by scenario ID."""
+scenarios(system::HetaODESystem) = copy(system.scenarios)
+
 SII.is_variable(system::HetaODESystem, symbol) = haskey(system.state_index, symbol)
 SII.variable_index(system::HetaODESystem, symbol) = get(system.state_index, symbol, nothing)
 SII.variable_symbols(system::HetaODESystem) = collect(keys(system.dynms.states))
