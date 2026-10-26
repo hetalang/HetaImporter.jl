@@ -10,43 +10,43 @@ git-tree-sha1 = "be8762f8d5d80ba6412f402918b6ddca4795e4f7"
     url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.2/schemas.tar.gz"
 
 ["dynms_schema_0.2.2"]
-git-tree-sha1 = "0a52106c67c0017b5a6783c68f6e77173e772109"
+git-tree-sha1 = "751721bc28ad8dc367ed998c804a0e1dfedc1b3b"
 
     [["dynms_schema_0.2.2".download]]
-    sha256 = "f868784d05c5acc79f58f8cbb33d3bd19c5d549cfb91d7e054d8a1c213b0c326"
-    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3-beta.2/schemas.tar.gz"
+    sha256 = "a44e7429705103d9f3d0767d0ece339dab9577d0d3dbf2e538d1c6e37ef61ba0"
+    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3/schemas.tar.gz"
 
 [[heta_app]]
 arch = "x86_64"
-git-tree-sha1 = "beed52ab6b4ca93873753f61a5ae777c421511a9"
+git-tree-sha1 = "ec217b7e8d94d315ae406e1e76bb4d4998fda778"
 libc = "glibc"
 os = "linux"
 
     [[heta_app.download]]
-    sha256 = "fe2380761a4ecff7baa85ffe295f812bab8189805fd01d34de41285fa65dd3c7"
-    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3-beta.2/heta-compiler-linux-x64.tar.gz"
+    sha256 = "67bdc0c5a2bb27ab920790e3773a5583b1cc782a2d351707d20477b0fa1f48cf"
+    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3/heta-compiler-linux-x64.tar.gz"
 [[heta_app]]
 arch = "aarch64"
-git-tree-sha1 = "db562a7432b89dbd8a8e348694b9ba2dda944bf3"
+git-tree-sha1 = "8bc8200b23e790c2fe029cf50dcf6c23351ec41f"
 libc = "glibc"
 os = "linux"
 
     [[heta_app.download]]
-    sha256 = "e6da54fa3e40c78014f56cf676c5c00ba9ec60a7d68b40239cab748af6699460"
-    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3-beta.2/heta-compiler-linux-arm64.tar.gz"
+    sha256 = "bb8d22029bb1f610c754d262dcba2f1f74c2cf68d96442ab764f6baca0d57274"
+    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3/heta-compiler-linux-arm64.tar.gz"
 [[heta_app]]
 arch = "x86_64"
-git-tree-sha1 = "cd91f1620f6051ca48583604fb00a9e4c1891f34"
+git-tree-sha1 = "24b9dfd3f27ee7f764ef1a499d3a0076728ea12f"
 os = "windows"
 
     [[heta_app.download]]
-    sha256 = "e6e9c1698313f69cecb5335f2bdd06781e30c4ca763927639cae34ab960c89b6"
-    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3-beta.2/heta-compiler-windows-x64.tar.gz"
+    sha256 = "3b850a04f518a4ad8ccca42e0ac39cf21ec3c2d8aa88e708d824bb42e7b56aec"
+    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3/heta-compiler-windows-x64.tar.gz"
 [[heta_app]]
 arch = "aarch64"
-git-tree-sha1 = "b19a186f09bf9021f4de4a167a9ec3ca6cf7eb9d"
+git-tree-sha1 = "f45b7f81e703ecfe0b3b2fb8e06bd5ce8747c46f"
 os = "macos"
 
     [[heta_app.download]]
-    sha256 = "bd6d3c12af46726ea8761b34399dcfd4700c6649f1c42c0213f53e46a343c884"
-    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3-beta.2/heta-compiler-macos-arm64.tar.gz"
+    sha256 = "d4d0fc043ee91790d9b9bdd70402b97b037172b5413d3b27a9630a7217203d1b"
+    url = "https://github.com/hetalang/heta-compiler/releases/download/v0.12.3/heta-compiler-macos-arm64.tar.gz"
