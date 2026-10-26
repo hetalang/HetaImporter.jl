@@ -27,6 +27,17 @@ using OrdinaryDiffEqTsit5
   @test_throws DimensionMismatch ODEProblem(system, (0.0, 1.0); p=[])
 end
 
+@testset "Event saving overrides" begin
+  system = import_heta(_dynms_model_dir("11-time-switcher"))
+  for positions in ((false, false), (true, false), (false, true), (true, true))
+    problem = ODEProblem(system, (0, 30); events_save=Dict(:sw2 => positions))
+    solution = solve(problem, Tsit5(); save_everystep=false)
+    @test SciMLBase.successful_retcode(solution)
+    @test count(==(5.0), solution.t) == sum(positions)
+    @test count(==(29.0), solution.t) == sum(positions)
+  end
+end
+
 @testset "ODEProblem and symbolic results" begin
   system = import_heta(_dynms_model_dir("0-hello-world"), :mm)
   problem = ODEProblem(system, (0.0, 10.0))

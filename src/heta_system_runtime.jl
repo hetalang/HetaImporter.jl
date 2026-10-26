@@ -397,8 +397,34 @@ function _heta_events_active(system::HetaODESystem, overrides)
   return active
 end
 
-function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing)
+function _heta_events_save(system::HetaODESystem, overrides)
+  positions = Dict(id => (true, true) for id in keys(merge_events(system.dynms)))
+  isnothing(overrides) && return positions
+  overrides isa Union{AbstractDict,AbstractVector} || throw(ArgumentError(
+    "events_save must be an AbstractDict or a vector of Symbol => (Bool, Bool) pairs.",
+  ))
+  all(entry -> entry isa Pair, overrides) || throw(ArgumentError(
+    "Event saving overrides must be pairs.",
+  ))
+  allunique(first(entry) for entry in overrides) || throw(ArgumentError(
+    "Event saving overrides must have unique event IDs.",
+  ))
+  for (id, value) in overrides
+    id isa Symbol || throw(ArgumentError("Event override keys must be Symbols, got $(repr(id))."))
+    haskey(positions, id) || throw(ArgumentError(
+      "$(repr(id)) is not an event of HetaODESystem $(system.name).",
+    ))
+    value isa Tuple{Bool,Bool} || throw(ArgumentError(
+      "Event saving override for $(repr(id)) must be a (Bool, Bool) tuple.",
+    ))
+    positions[id] = value
+  end
+  return positions
+end
+
+function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing, events_save=nothing)
   active = _heta_events_active(system, events_active)
+  positions = _heta_events_save(system, events_save)
   code = system.generated_code
   callbacks = Any[]
 
@@ -424,6 +450,7 @@ function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing)
       time_type;
       initial_affect=false,
       initialize,
+      save_positions=positions[id],
     ))
   end
 
@@ -437,7 +464,7 @@ function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing)
         _heta_runtime_function(event.affect_func),
         !isempty(system.dynms.continuous_events[id].discrete_affects),
       ),
-      ; initialize,
+      ; initialize, save_positions=positions[id],
     ))
   end
 
@@ -451,7 +478,7 @@ function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing)
         _heta_runtime_function(event.affect_func),
         !isempty(system.dynms.discrete_events[id].discrete_affects),
       ),
-      ; initialize,
+      ; initialize, save_positions=positions[id],
     ))
   end
 
@@ -466,7 +493,9 @@ function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing)
       identity;
       after_affect! = integrator -> SciMLBase.add_tstop!(integrator, integrator.t),
     )
-    push!(callbacks, SciMLBase.DiscreteCallback(condition, affect!; initialize))
+    push!(callbacks, SciMLBase.DiscreteCallback(
+      condition, affect!; initialize, save_positions=positions[id],
+    ))
   end
 
   callback = isempty(callbacks) ? nothing : SciMLBase.CallbackSet(callbacks...)
@@ -485,7 +514,8 @@ end
 
 """
     SciMLBase.ODEProblem(system::HetaODESystem, tspan;
-                        p=SciMLBase.NullParameters(), events_active=nothing, kwargs...)
+                        p=SciMLBase.NullParameters(), events_active=nothing,
+                        events_save=nothing, kwargs...)
 
 Construct an ODE problem using the model's initial conditions and parameter defaults.
 
@@ -508,6 +538,10 @@ initial values, and initial states.
 override activation of named model events for this problem. Unspecified events
 retain their DynMS `active` defaults. The system and its defaults are not mutated.
 
+`events_save` accepts a dictionary or vector of `Symbol => (Bool, Bool)` pairs
+to control saving immediately before and after each event, respectively.
+Unspecified events retain `(true, true)`. 
+
 The `u0` and `callback` keywords cannot be supplied; initial conditions and
 callbacks are constructed from the model.
 """
@@ -516,6 +550,7 @@ function SciMLBase.ODEProblem(
   tspan::Tuple;
   p=SciMLBase.NullParameters(),
   events_active=nothing,
+  events_save=nothing,
   kwargs...,
 )
   haskey(kwargs, :callback) && throw(ArgumentError(
@@ -531,7 +566,7 @@ function SciMLBase.ODEProblem(
   parameters = _heta_problem_parameters(system, p)
   initial_state = _heta_runtime_function(system.generated_code.u0_func)
   ode_function = SciMLBase.ODEFunction(system)
-  heta_callback = _heta_callbacks(system, tspan, events_active)
+  heta_callback = _heta_callbacks(system, tspan, events_active, events_save)
 
   if isnothing(heta_callback)
     return SciMLBase.ODEProblem(ode_function, initial_state, tspan, parameters; kwargs...)

@@ -61,6 +61,21 @@ a pair vector are rejected. These overrides apply to time, continuous, discrete,
 and stop events, including events inactive in the model. The system defaults are not mutated, so the same
 system can be reused for different scenarios. 
 
+Control saving before and after events with `events_save`:
+
+```julia
+problem = ODEProblem(sys, (0.0, 100.0);
+    events_save=Dict(:dosing => (false, true)))
+# A vector of pairs is also supported:
+problem = ODEProblem(sys, (0.0, 100.0);
+    events_save=[:dosing => (false, false)], saveat=[0.0, 50.0, 100.0])
+```
+
+Each value is a `(save_before, save_after)` tuple of `Bool`s, passed to the
+event callback's `save_positions`. Unspecified events use `(true, true)`;
+`nothing` or an empty collection uses all defaults. Keys must name existing
+events, and duplicate names in a pair vector are rejected. 
+
 Override selected tunable parameters with a dictionary or a vector of pairs:
 
 ```julia
