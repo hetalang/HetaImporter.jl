@@ -313,7 +313,10 @@ function _heta_generated_code_source(system::HetaODESystem)
   _write_heta_event_functions(io, code.stop_events)
   println(io, "mass_matrix = ", repr(code.mass_matrix))
   source = String(take!(io))
-  return occursin("NaNMath.", source) ? "import NaNMath\n" * source : source
+  for dependency in ("NaNMath", "SpecialFunctions")
+    occursin(dependency * ".", source) && (source = "import $dependency\n" * source)
+  end
+  return source
 end
 
 """

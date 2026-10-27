@@ -4,6 +4,7 @@ using JSON
 using JSONSchema
 using MathJSON
 import NaNMath
+import SpecialFunctions
 using RuntimeGeneratedFunctions
 using DataStructures
 using DiffEqCallbacks

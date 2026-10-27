@@ -699,7 +699,7 @@ function _dynms_operator_to_julia(operator::Symbol, args::Vector{Any}; nanmath::
   operator == :Sign && return :(sign($(only(args))))
   operator == :Square && return :($(only(args)) ^ 2)
   operator == :Root && return length(args) == 1 ? :(sqrt($(only(args)))) : :($(args[1]) ^ (1 / $(args[2])))
-  operator == :Factorial && return :(factorial(round(Int, $(only(args)))))
+  operator == :Factorial && return :(SpecialFunctions.gamma($(only(args)) + 1))
 
   operator == :Less && return _dynms_pairwise_comparison(Symbol("<"), args)
   operator == :LessEqual && return _dynms_pairwise_comparison(Symbol("<="), args)
