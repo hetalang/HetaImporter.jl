@@ -502,6 +502,22 @@ function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing, ev
   return callback
 end
 
+# Keep generated initialization code out of problem displays while preserving
+# SciML's function-valued initial-state interface.
+struct HetaInitialState{F} <: Function
+  model::Symbol
+  f::F
+end
+
+(initial::HetaInitialState)(p, t) = initial.f(p, t)
+
+Base.show(io::IO, initial::HetaInitialState) =
+  print(io, "HetaInitialState(", repr(initial.model), ")")
+Base.show(io::IO, ::MIME"text/plain", initial::HetaInitialState) = show(io, initial)
+# SciML's problem summary prints the initial-state type separately from its value.
+Base.show(io::IO, ::Type{HetaInitialState{F}}) where {F} =
+  print(io, "HetaInitialState")
+
 function SciMLBase.ODEFunction(system::HetaODESystem; kwargs...)
   return SciMLBase.ODEFunction{true}(
     _heta_runtime_function(system.generated_code.ode_func);
@@ -564,7 +580,9 @@ function SciMLBase.ODEProblem(
   # Use the same continuous time type for the problem and its event callbacks.
   tspan = promote(float(first(tspan)), float(last(tspan)))
   parameters = _heta_problem_parameters(system, p)
-  initial_state = _heta_runtime_function(system.generated_code.u0_func)
+  initial_state = HetaInitialState(
+    system.name, _heta_runtime_function(system.generated_code.u0_func),
+  )
   ode_function = SciMLBase.ODEFunction(system)
   heta_callback = _heta_callbacks(system, tspan, events_active, events_save)
 
