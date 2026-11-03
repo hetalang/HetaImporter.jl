@@ -21,4 +21,5 @@ _dynms_model_dir(model_name::AbstractString) = joinpath(DYNMS_TEST_MODELS_DIR, m
     include("test_build_julia_file.jl")
     include("dynms_tests/test_heta_system.jl")
     include("dynms_tests/test_odeprob_interface.jl")
+    include("dynms_tests/test_remake.jl")
 end

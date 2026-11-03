@@ -81,6 +81,40 @@ end
 
 SII.parameter_values(p::HetaParameters) = p
 SII.parameter_values(p::HetaParameters, i::Integer) = p[i]
+SII.set_parameter!(p::HetaParameters, value, i::Integer) = setindex!(p, value, i)
+
+# Reconstruct whole portions before initializing: applying setters one at a time
+# would repeatedly reset derived/discrete values and could truncate new types.
+function _heta_updated_values(old, updates)
+  isempty(old) && return copy(old)
+  values = [get(updates, i, old[i]) for i in eachindex(old)]
+  T = mapreduce(typeof, promote_type, values)
+  return T.(values)
+end
+
+function SII.remake_buffer(indp, old::HetaParameters, idxs, vals)
+  indices, values = collect(idxs), collect(vals)
+  length(indices) == length(values) || throw(DimensionMismatch(
+    "Parameter indices and values must have the same length.",
+  ))
+  updates = Dict{Int,Any}()
+  for (key, value) in zip(indices, values)
+    key isa QuoteNode && (key = key.value)
+    index = key isa Integer ? key : SII.parameter_index(indp, key)
+    index isa Integer && 1 <= index <= length(old) || throw(ArgumentError(
+      "Unknown Heta parameter index: $(repr(key)).",
+    ))
+    index <= length(old.tunable) || throw(ArgumentError(
+      "Only tunable Heta parameters can be remade; $(repr(key)) is derived or discrete.",
+    ))
+    value isa Number || throw(ArgumentError("Parameter values must be numeric."))
+    haskey(updates, index) && throw(ArgumentError("Duplicate parameter index: $index."))
+    updates[index] = value
+  end
+  isempty(updates) && return copy(old)
+  tunable = _heta_updated_values(old.tunable, updates)
+  return SciMLStructures.replace(SciMLStructures.Tunable(), old, tunable)
+end
 
 SciMLStructures.isscimlstructure(::HetaParameters) = true
 SciMLStructures.ismutablescimlstructure(::HetaParameters) = true
@@ -100,11 +134,17 @@ function SciMLStructures.replace(
   p::HetaParameters,
   values::AbstractVector,
 )
+  length(values) == length(p.tunable) || throw(DimensionMismatch(
+    "Expected $(length(p.tunable)) tunable values, got $(length(values)).",
+  ))
   derived, discrete = _heta_reinitialize_parameters(p, values)
   return HetaParameters(values, derived, discrete, p.initialize_parameters!)
 end
 
 function SciMLStructures.replace!(::SciMLStructures.Tunable, p::HetaParameters, values)
+  length(values) == length(p.tunable) || throw(DimensionMismatch(
+    "Expected $(length(p.tunable)) tunable values, got $(length(values)).",
+  ))
   copyto!(p.tunable, values)
   _heta_reinitialize_parameters!(p)
   return nothing

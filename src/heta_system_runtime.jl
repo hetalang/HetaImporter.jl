@@ -266,8 +266,8 @@ function _heta_problem_parameters(system::HetaODESystem, p)
   return _heta_parameters(system, p)
 end
 
-function _heta_named_parameters(system::HetaODESystem, overrides)
-  defaults = system.dynms.parameters.tunable
+function _heta_named_parameters(system::HetaODESystem, overrides;
+  defaults=system.dynms.parameters.tunable)
   updates = Dict{Symbol,Any}()
   for entry in overrides
     entry isa Pair || throw(ArgumentError("Named parameter overrides must be pairs."))
@@ -280,9 +280,9 @@ function _heta_named_parameters(system::HetaODESystem, overrides)
     value isa Number || throw(ArgumentError("Parameter override for $(repr(name)) must be numeric."))
     updates[name] = value
   end
-  isempty(updates) && return _heta_default_parameters(system)
-  values = [get(updates, name, default) for (name, default) in defaults]
-  return _heta_parameters(system, collect(promote(values...)))
+  isempty(updates) && return _heta_parameters(system, collect(values(defaults)))
+  parameter_values = [get(updates, name, default) for (name, default) in defaults]
+  return _heta_parameters(system, collect(promote(parameter_values...)))
 end
 
 function _heta_time_event_schedule(schedule_func, integrator)
@@ -597,4 +597,29 @@ function SciMLBase.ODEProblem(
     callback=heta_callback,
     kwargs...,
   )
+end
+
+_heta_is_named_map(value) = value isa AbstractDict || value isa AbstractVector{<:Pair} ||
+  (value isa AbstractVector && any(x -> x isa Pair, value))
+
+# Resolve only named tunables here, before SciML expands maps to include derived
+# and discrete parameters. All other problem reconstruction stays with SciML.
+function SciMLBase.updated_u0_p(
+  prob::SciMLBase.ODEProblem{U,T,IIP,<:HetaParameters}, u0, p, t0=nothing;
+  interpret_symbolicmap=true, use_defaults=false,
+) where {U,T,IIP}
+  _heta_is_named_map(u0) && throw(ArgumentError(
+    "Heta initial states are defined by the model; symbolic u0 overrides are not supported. " *
+    "Change the model's tunable parameters instead.",
+  ))
+  if interpret_symbolicmap && _heta_is_named_map(p)
+    system = prob.f.sys
+    defaults = use_defaults ? system.dynms.parameters.tunable :
+      OrderedDict(zip(keys(system.dynms.parameters.tunable), prob.p.tunable))
+    p = _heta_named_parameters(system, p; defaults)
+  end
+  # Numeric u0 replacement is required by SciML when it evaluates our initializer
+  # during solve. Do not prohibit that internal path or replace SciML's remake.
+  return invoke(SciMLBase.updated_u0_p, Tuple{Any,Any,Any,Any}, prob, u0, p, t0;
+    interpret_symbolicmap, use_defaults)
 end

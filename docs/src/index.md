@@ -113,6 +113,59 @@ sol(50.0; idxs=:y)     # observed value at a particular time
 
 Use the names returned by `equations(sys)` and `observed(sys)` for these queries. Access parameters with `sol.ps[:Vmax]`, or import [`getp`](https://docs.sciml.ai/SymbolicIndexingInterface/stable/api/#SymbolicIndexingInterface.getp) explicitly with `using SymbolicIndexingInterface: getp`.
 
+### Remake a problem
+
+Use SciML's `remake` to update tunable parameters by name or supply a parameter
+container constructed with `SciMLStructures.replace`. Named updates must be
+numeric and may name only tunables; derived and discrete values are recomputed
+from the model. Initial states continue to use the model's initializer:
+
+```julia
+using SciMLBase: remake
+import SciMLStructures as SS
+
+updated = remake(problem; p=Dict(:Vmax => 0.2))
+extended = remake(updated; tspan=(0.0, 200.0))
+
+# For a complete numerical tunable vector, first construct a parameter container.
+newp = SS.replace(SS.Tunable(), problem.p, new_tunable_values)
+updated = remake(problem; p=newp)
+```
+
+A numerical vector passed directly to SciML's `remake` replaces the entire
+parameter container; it is not interpreted as Heta tunables. Plain `remake`
+does not make independent copies of parameter arrays or callbacks.
+
+Symbolic `u0` overrides are rejected: change tunable parameters to change model
+initial conditions. Low-level numeric `u0` replacement remains available because
+SciML uses it internally during solver initialization; it is not a supported
+Heta configuration operation. The generic SciML field-replacement machinery is
+otherwise unchanged.
+
+To mutate the existing problem's tunables, use SciMLStructures:
+
+```julia
+SS.replace!(SS.Tunable(), problem.p, new_tunable_values)
+```
+
+Supply one value per tunable, in `keys(parameters(sys).tunable)` order. This
+preserves the problem, parameter container, and its arrays, and recomputes derived
+and discrete initial values once after copying the tunables. Values must fit the
+existing storage's element type; use nonmutating replacement to change that type.
+
+For selected tunables, use a reusable symbolic setter:
+
+```julia
+using SymbolicIndexingInterface: setp
+set_rates! = setp(prob.f.sys, [:Vmax, :k1])
+set_rates!(prob, [0.2, 0.1])
+```
+
+Each tunable assignment recomputes derived and discrete initial values. Apply
+these updates before starting a solve; the model initializer then uses the new
+parameters. Direct writes into `problem.p.tunable` bypass recomputation. Neither
+parameter update API rebuilds callbacks or changes event activation/saving.
+
 ### Import multiple models
 
 [`import_heta_all`](@ref) returns an ordered dictionary of systems keyed by model ID:
