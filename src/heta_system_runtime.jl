@@ -504,9 +504,9 @@ end
 
 # Keep generated initialization code out of problem displays while preserving
 # SciML's function-valued initial-state interface.
-struct HetaInitialState{F} <: Function
+struct HetaInitialState <: Function
   model::Symbol
-  f::F
+  f::Function
 end
 
 (initial::HetaInitialState)(p, t) = initial.f(p, t)
@@ -515,7 +515,7 @@ Base.show(io::IO, initial::HetaInitialState) =
   print(io, "HetaInitialState(", repr(initial.model), ")")
 Base.show(io::IO, ::MIME"text/plain", initial::HetaInitialState) = show(io, initial)
 # SciML's problem summary prints the initial-state type separately from its value.
-Base.show(io::IO, ::Type{HetaInitialState{F}}) where {F} =
+Base.show(io::IO, ::Type{HetaInitialState}) =
   print(io, "HetaInitialState")
 
 function SciMLBase.ODEFunction(system::HetaODESystem; kwargs...)

@@ -14,20 +14,19 @@ a simulation without reinitializing them.
 struct HetaParameters{
   T<:AbstractVector,
   R<:AbstractVector,
-  D<:AbstractVector,
-  F,
+  D<:AbstractVector 
 }
   tunable::T
   derived::R
   discrete::D
-  initialize_parameters!::F
+  initialize_parameters!::Function
 end
 
 function HetaParameters(
   tunable::AbstractVector,
   nderived::Integer,
   ndiscrete::Integer,
-  initialize_parameters!,
+  initialize_parameters!::Function,
 )
   nderived >= 0 || throw(ArgumentError("nderived must be non-negative"))
   ndiscrete >= 0 || throw(ArgumentError("ndiscrete must be non-negative"))
