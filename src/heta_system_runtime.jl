@@ -422,6 +422,70 @@ function _heta_events_save(system::HetaODESystem, overrides)
   return positions
 end
 
+# Keep model-specific generated functions out of the callback's concrete type,
+# while evaluating the entire condition vector in one generated call.
+struct HetaVectorCondition <: Function
+  f::Function
+end
+(condition::HetaVectorCondition)(out, u, t, integrator) = condition.f(out, u, t, integrator)
+
+# Current solvers pass a signed mask for all simultaneous crossings. Some
+# solvers still pass the index of a single event.
+function _heta_vector_affect!(integrator, affects, triggered::AbstractVector)
+  for i in eachindex(affects)
+    iszero(triggered[i]) || affects[i](integrator)
+  end
+  return nothing
+end
+function _heta_vector_affect!(integrator, affects, index::Integer)
+  affects[index](integrator)
+  return nothing
+end
+
+function _heta_vector_callbacks!(callbacks, system, event_codes, events, active, positions;
+                                 discrete=false)
+  # rootfind and save_positions belong to the whole callback, not to an entry.
+  groups = OrderedDict{Tuple{Bool,Bool},Vector{Symbol}}()
+  for id in keys(event_codes)
+    active[id] || continue
+    push!(get!(groups, positions[id], Symbol[]), id)
+  end
+  for (save_positions, ids) in groups
+    condition! = HetaVectorCondition(_heta_runtime_function(
+      _heta_vector_condition_function(system.dynms, [events[id] for id in ids]; discrete),
+    ))
+    affects = Function[_heta_event_affect(
+      _heta_runtime_function(event_codes[id].affect_func),
+      !isempty(events[id].discrete_affects),
+    ) for id in ids]
+    initial_conditions = Function[
+      _heta_runtime_function(event_codes[id].condition_func) for id in ids
+    ]
+    initial_affects = Bool[event_codes[id].initial_affect for id in ids]
+    initialize = function (callback, u, t, integrator)
+      modified = false
+      for i in eachindex(ids)
+        initial_affects[i] || continue
+        value = initial_conditions[i](u, t, integrator)
+        if discrete ? value : value >= zero(value)
+          affects[i](integrator)
+          modified = true
+        end
+      end
+      SciMLBase.derivative_discontinuity!(integrator, modified)
+      return nothing
+    end
+    affect! = (integrator, triggered) -> _heta_vector_affect!(integrator, affects, triggered)
+    push!(callbacks, SciMLBase.VectorContinuousCallback(
+      condition!, affect!, length(ids);
+      initialize, save_positions,
+      rootfind=discrete ? SciMLBase.NoRootFind : SciMLBase.LeftRootFind,
+      interp_points=discrete ? 0 : 10,
+    ))
+  end
+  return callbacks
+end
+
 function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing, events_save=nothing)
   active = _heta_events_active(system, events_active)
   positions = _heta_events_save(system, events_save)
@@ -454,33 +518,10 @@ function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing, ev
     ))
   end
 
-  for (id, event) in code.continuous_events
-    active[id] || continue
-    # Initial affect is applied if event.initial_affect is true and condition is nonnegative at the initial time
-    initialize = _heta_event_initialize(event.initial_affect, value -> value >= zero(value))
-    push!(callbacks, SciMLBase.ContinuousCallback(
-      _heta_runtime_function(event.condition_func),
-      _heta_event_affect(
-        _heta_runtime_function(event.affect_func),
-        !isempty(system.dynms.continuous_events[id].discrete_affects),
-      ),
-      ; initialize, save_positions=positions[id],
-    ))
-  end
-
-  for (id, event) in code.discrete_events
-    active[id] || continue
-    # Initial affect is applied if event.initial_affect is true and condition is satisfied at the initial time
-    initialize = _heta_event_initialize(event.initial_affect, identity)
-    push!(callbacks, SciMLBase.DiscreteCallback(
-      _heta_runtime_function(event.condition_func),
-      _heta_event_affect(
-        _heta_runtime_function(event.affect_func),
-        !isempty(system.dynms.discrete_events[id].discrete_affects),
-      ),
-      ; initialize, save_positions=positions[id],
-    ))
-  end
+  _heta_vector_callbacks!(callbacks, system, code.continuous_events,
+    system.dynms.continuous_events, active, positions)
+  _heta_vector_callbacks!(callbacks, system, code.discrete_events,
+    system.dynms.discrete_events, active, positions; discrete=true)
 
   for (id, event) in code.stop_events
     active[id] || continue

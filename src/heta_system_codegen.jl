@@ -190,6 +190,26 @@ function _heta_condition_function(
   )
 end
 
+# Evaluate shared bindings once for the whole vector callback.
+function _heta_vector_condition_function(dynms::DynMSModel, events; discrete=false)
+  statements = [:(__p__ = __integrator__.p)]
+  _add_heta_parameter_bindings!(statements, dynms)
+  _add_heta_state_bindings!(statements, dynms)
+  _add_heta_assignment_bindings!(statements, dynms, (event.condition for event in events))
+  for (i, event) in enumerate(events)
+    # A true plateau is zero: only false -> true reaches zero. Leaving true
+    # does not trigger an effect or create extra event saves.
+    condition = discrete ? :($(event.condition) ? 0 : -1) : event.condition
+    push!(statements, :(__out__[$i] = $condition))
+  end
+  push!(statements, :(return nothing))
+  return _dynms_function(
+    Symbol(dynms.id, "_vector_condition_func_"),
+    [:__out__, :__u__, :t, :__integrator__],
+    statements,
+  )
+end
+
 function _heta_affect_function(
   dynms::DynMSModel,
   event;
