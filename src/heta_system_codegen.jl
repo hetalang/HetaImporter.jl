@@ -93,7 +93,9 @@ function _add_heta_state_bindings!(statements, dynms::DynMSModel; u=:__u__)
 end
 
 function _heta_initialize_parameters_function(dynms::DynMSModel; name=dynms.id)
-  statements = []
+  # Initial assignments use time zero, as in the compiler's Julia backend.
+  # Bind it locally for both construction and subsequent parameter updates.
+  statements = [:(t = 0.0)]
   for (i, id) in enumerate(keys(dynms.parameters.tunable))
     push!(statements, :($id = __tunable__[$i]))
   end
