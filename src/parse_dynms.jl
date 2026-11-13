@@ -1,5 +1,6 @@
 const DynMSExpr = Union{Expr,Symbol,Float64}
 const DynMSVal = Union{Symbol, Float64}
+const DynMSCondition = Union{DynMSExpr,Bool}
 
 abstract type AbstractDynMSEvent end
 
@@ -24,28 +25,34 @@ end
 
 struct DynMSContinuousEvent <: AbstractDynMSEvent
   id::Symbol
-  condition::Union{Expr,Symbol}
+  condition::DynMSCondition
   state_affects::OrderedDict{Symbol,DynMSExpr}
   discrete_affects::OrderedDict{Symbol,DynMSExpr}
   initial_affect::Bool
   is_active::Bool
+  rootfind::Bool
+  stop_simulation::Bool
 end
+
+DynMSContinuousEvent(id, condition, state_affects, discrete_affects, initial_affect, is_active, rootfind=true) =
+  DynMSContinuousEvent(id, condition, state_affects, discrete_affects, initial_affect, is_active, rootfind, false)
 
 struct DynMSDiscreteEvent <: AbstractDynMSEvent
   id::Symbol  
-  condition::Union{Expr,Symbol}
+  condition::DynMSCondition
   state_affects::OrderedDict{Symbol,DynMSExpr}
   discrete_affects::OrderedDict{Symbol,DynMSExpr}
   initial_affect::Bool
   is_active::Bool
+  rootfind::Bool
+  stop_simulation::Bool
 end
 
-struct DynMSStopEvent <: AbstractDynMSEvent
-  id::Symbol
-  condition::Union{Expr,Symbol}
-  initial_affect::Bool
-  is_active::Bool
-end
+DynMSDiscreteEvent(id, condition, state_affects, discrete_affects, initial_affect, is_active, rootfind=false) =
+  DynMSDiscreteEvent(id, condition, state_affects, discrete_affects, initial_affect, is_active, rootfind, false)
+
+_heta_has_boolean_condition(::DynMSContinuousEvent) = false
+_heta_has_boolean_condition(::DynMSDiscreteEvent) = true
 
 event_id(event::AbstractDynMSEvent) = event.id
 is_active(event::AbstractDynMSEvent) = event.is_active
@@ -65,13 +72,12 @@ struct DynMSModel
   time_events::OrderedDict{Symbol,DynMSTimeEvent}
   continuous_events::OrderedDict{Symbol,DynMSContinuousEvent}
   discrete_events::OrderedDict{Symbol,DynMSDiscreteEvent}
-  stop_events::OrderedDict{Symbol,DynMSStopEvent}
   observables::Vector{Symbol}
 end
 
 has_algebraic(model::DynMSModel) = any(is_algebraic, values(model.states))
 
-merge_events(model::DynMSModel) = merge(model.time_events, model.continuous_events, model.discrete_events, model.stop_events)
+merge_events(model::DynMSModel) = merge(model.time_events, model.continuous_events, model.discrete_events)
 
 struct DynMSScenario
   id::Symbol
@@ -106,13 +112,7 @@ end
 struct DynMSJuliaConditionalEventCode
   id::Symbol
   condition_func::DynMSJuliaFunction
-  affect_func::DynMSJuliaFunction
-  initial_affect::Bool
-end
-
-struct DynMSJuliaStopEventCode
-  id::Symbol
-  condition_func::DynMSJuliaFunction
+  affect_func::Union{DynMSJuliaFunction,Nothing}
   initial_affect::Bool
 end
 
@@ -306,7 +306,6 @@ function _convert_dynms_model(model::AbstractDict; nanmath::Bool=false)
   time_events = _convert_dynms_time_events(model; nanmath)
   continuous_events = _convert_dynms_continuous_events(model; nanmath)
   discrete_events = _convert_dynms_discrete_events(model; nanmath)
-  stop_events = _convert_dynms_stop_events(model; nanmath)
   parameters = _convert_dynms_parameters(
     model, time_events, continuous_events, discrete_events; nanmath,
   )
@@ -320,7 +319,6 @@ function _convert_dynms_model(model::AbstractDict; nanmath::Bool=false)
     time_events,
     continuous_events,
     discrete_events,
-    stop_events,
     observables
   )
 end
@@ -328,6 +326,8 @@ end
 function _convert_dynms_parameters(model::AbstractDict, event_groups...; nanmath::Bool=false)
   affected = Set{Symbol}()
   for event in Iterators.flatten(values(group) for group in event_groups)
+    # Termination replaces actions, so their targets are not mutable parameters.
+    event isa DynMSTimeEvent || !event.stop_simulation || continue
     union!(affected, keys(event.discrete_affects))
   end
   derived = OrderedDict{Symbol,DynMSExpr}()
@@ -424,16 +424,6 @@ function _convert_dynms_discrete_events(model::AbstractDict; nanmath::Bool=false
   return events
 end
 
-function _convert_dynms_stop_events(model::AbstractDict; nanmath::Bool=false)
-  events = OrderedDict{Symbol,DynMSStopEvent}()
-  for event in _dynms_event_defs(model)
-    _dynms_event_kind(event) == :stop || continue
-    parsed = _convert_dynms_stop_event(event; nanmath)
-    events[parsed.id] = parsed
-  end
-  return events
-end
-
 function _convert_dynms_observables(model::AbstractDict)
   return Symbol[Symbol(string(obs["symbol"])) for obs in get(model, "observables", Any[])]
 end
@@ -461,7 +451,9 @@ function _convert_dynms_continuous_event(model::AbstractDict, event; nanmath::Bo
     state_affects,
     discrete_affects,
     Bool(get(event["trigger"], "atStart", false)),
-    Bool(get(event, "active", true))
+    Bool(get(event, "active", true)),
+    event["trigger"]["detection"] == "root",
+    Bool(get(event, "stopSimulation", false)),
   )
 end
 
@@ -473,16 +465,9 @@ function _convert_dynms_discrete_event(model::AbstractDict, event; nanmath::Bool
     state_affects,
     discrete_affects,
     Bool(get(event["trigger"], "atStart", false)),
-    Bool(get(event, "active", true))
-  )
-end
-
-function _convert_dynms_stop_event(event; nanmath::Bool=false)
-  return DynMSStopEvent(
-    Symbol(string(event["id"])),
-    _convert_dynms_condition(event["trigger"]["rhs"]; nanmath),
-    Bool(get(event["trigger"], "atStart", false)),
-    Bool(get(event, "active", true))
+    Bool(get(event, "active", true)),
+    event["trigger"]["detection"] == "root",
+    Bool(get(event, "stopSimulation", false)),
   )
 end
 
@@ -519,20 +504,12 @@ function _dynms_event_kind(event)
     throw(ArgumentError("DynMS event $(event["id"]) has trigger type '$trigger_type' but does not include an explicit detection type."))
 
   detection_type = string(trigger["detection"])
-  terminate_simulation = Bool(get(event, "stopSimulation", false))
 
-  # Temporary backend limitation: stopSimulation is currently represented as a
-  # separate StopEvent and is supported only for step-detected conditional events.
-  if terminate_simulation
-    trigger_type == "conditional" && detection_type == "step" && return :stop
-    throw(ArgumentError(
-      "DynMS event $(event["id"]) has an argument `stopSimulation` set to true, which is currently supported only for " *
-      "trigger type 'conditional' with detection 'step'. Got type='$trigger_type', detection='$detection_type'."
-    ))
+  if trigger_type in ("crossing", "conditional") && detection_type in ("root", "step")
+    # These inspection categories describe the trigger expression, independently
+    # of the rootfinding policy retained on each event.
+    return trigger_type == "crossing" ? :continuous : :discrete
   end
-
-  trigger_type == "crossing" && detection_type == "root" && return :continuous
-  trigger_type == "conditional" && detection_type == "step" && return :discrete
 
   throw(ArgumentError("Unsupported DynMS event trigger type/detection combination: type='$trigger_type', detection='$detection_type'."))
 end
@@ -551,8 +528,7 @@ end
 
 function _convert_dynms_condition(expr; nanmath::Bool=false)
   parsed = _convert_dynms_expr(expr; nanmath)
-  parsed isa Union{Expr,Symbol} && return parsed
-  throw(ArgumentError("DynMS event condition must parse to Expr or Symbol, got: $parsed"))
+  return parsed::DynMSCondition
 end
 
 function _convert_dynms_numeric_expr(expr, context; nanmath::Bool=false)

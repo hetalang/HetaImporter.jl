@@ -12,7 +12,6 @@
   @test isempty(model.time_events)
   @test collect(keys(model.continuous_events)) == [:sw1]
   @test isempty(model.discrete_events)
-  @test isempty(model.stop_events)
 
   sw1 = model.continuous_events[:sw1]
   @test sw1.condition == :cond1

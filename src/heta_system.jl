@@ -37,8 +37,7 @@ function Base.show(io::IO, ::MIME"text/plain", system::HetaODESystem)
   n_time = length(code.time_events)
   n_continuous = length(code.continuous_events)
   n_discrete_events = length(code.discrete_events)
-  n_stop = length(code.stop_events)
-  n_events = n_time + n_continuous + n_discrete_events + n_stop
+  n_events = n_time + n_continuous + n_discrete_events
 
   println(io, "HetaODESystem `$(system.name)`")
   println(io, "  States:     ", length(dynms.states))
@@ -48,7 +47,7 @@ function Base.show(io::IO, ::MIME"text/plain", system::HetaODESystem)
   println(io, "  Observed:   ", length(dynms.assignment_rules))
   print(io, "  Events:     ", n_events,
     " (", n_time, " time, ", n_continuous, " continuous, ",
-    n_discrete_events, " discrete, ", n_stop, " stop)")
+    n_discrete_events, " discrete)")
   return nothing
 end
 

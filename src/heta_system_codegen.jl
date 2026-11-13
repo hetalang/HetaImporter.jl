@@ -173,7 +173,7 @@ end
 
 function _heta_condition_function(
   dynms::DynMSModel,
-  event::Union{DynMSContinuousEvent,DynMSDiscreteEvent,DynMSStopEvent};
+  event::Union{DynMSContinuousEvent,DynMSDiscreteEvent};
   name=dynms.id,
 )
   statements = [:(__p__ = __integrator__.p)]
@@ -193,15 +193,15 @@ function _heta_condition_function(
 end
 
 # Evaluate shared bindings once for the whole vector callback.
-function _heta_vector_condition_function(dynms::DynMSModel, events; discrete=false)
+function _heta_vector_condition_function(dynms::DynMSModel, events)
   statements = [:(__p__ = __integrator__.p)]
   _add_heta_parameter_bindings!(statements, dynms)
   _add_heta_state_bindings!(statements, dynms)
   _add_heta_assignment_bindings!(statements, dynms, (event.condition for event in events))
   for (i, event) in enumerate(events)
-    # A true plateau is zero: only false -> true reaches zero. Leaving true
-    # does not trigger an effect or create extra event saves.
-    condition = discrete ? :($(event.condition) ? 0 : -1) : event.condition
+    # Opposite signs let rootfinding locate the Boolean transition. A zero
+    # plateau would be accepted at an arbitrary point after the transition.
+    condition = _heta_has_boolean_condition(event) ? :($(event.condition) ? 1 : -1) : event.condition
     push!(statements, :(__out__[$i] = $condition))
   end
   push!(statements, :(return nothing))
@@ -267,19 +267,7 @@ function _heta_conditional_event_codes(dynms, events; name=dynms.id)
     result[id] = DynMSJuliaConditionalEventCode(
       id,
       _heta_condition_function(dynms, event; name),
-      _heta_affect_function(dynms, event; name),
-      has_initial_affect(event),
-    )
-  end
-  return result
-end
-
-function _heta_stop_event_codes(dynms; name=dynms.id)
-  result = OrderedDict{Symbol,DynMSJuliaStopEventCode}()
-  for (id, event) in dynms.stop_events
-    result[id] = DynMSJuliaStopEventCode(
-      id,
-      _heta_condition_function(dynms, event; name),
+      event.stop_simulation ? nothing : _heta_affect_function(dynms, event; name),
       has_initial_affect(event),
     )
   end
@@ -298,7 +286,6 @@ function _generate_ode_code(dynms::DynMSModel; name=dynms.id)
     discrete_events=_heta_conditional_event_codes(
       dynms, dynms.discrete_events; name,
     ),
-    stop_events=_heta_stop_event_codes(dynms; name),
     mass_matrix=has_algebraic(dynms) ? Diagonal(Float64[
       !is_algebraic(state) for state in values(dynms.states)
     ]) : I,
@@ -312,9 +299,7 @@ function _write_heta_event_functions(io, event_codes)
       _dynms_function_source(io, event.affect_func)
     elseif event isa DynMSJuliaConditionalEventCode
       _dynms_function_source(io, event.condition_func)
-      _dynms_function_source(io, event.affect_func)
-    elseif event isa DynMSJuliaStopEventCode
-      _dynms_function_source(io, event.condition_func)
+      isnothing(event.affect_func) || _dynms_function_source(io, event.affect_func)
     end
   end
   return nothing
@@ -332,7 +317,6 @@ function _heta_generated_code_source(system::HetaODESystem)
   _write_heta_event_functions(io, code.time_events)
   _write_heta_event_functions(io, code.continuous_events)
   _write_heta_event_functions(io, code.discrete_events)
-  _write_heta_event_functions(io, code.stop_events)
   println(io, "mass_matrix = ", repr(code.mass_matrix))
   source = String(take!(io))
   for dependency in ("NaNMath", "SpecialFunctions")

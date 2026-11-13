@@ -11,7 +11,6 @@
   @test collect(keys(model.time_events)) == [:sw0, :sw1, :sw2]
   @test isempty(model.continuous_events)
   @test isempty(model.discrete_events)
-  @test isempty(model.stop_events)
 
   sw0 = model.time_events[:sw0]
   @test sw0.start == 40.0

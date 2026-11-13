@@ -40,12 +40,12 @@ parameters(system::HetaODESystem) = (
 """Return the assignment-rule expressions available as observed variables."""
 observed(system::HetaODESystem) = copy(system.dynms.assignment_rules)
 
-"""Return the time, continuous, discrete, and stop event definitions."""
+"""Return time, crossing (`continuous`), and conditional (`discrete`) events.
+Non-time events carry a `stop_simulation` flag."""
 events(system::HetaODESystem) = (
   time=copy(system.dynms.time_events),
   continuous=copy(system.dynms.continuous_events),
   discrete=copy(system.dynms.discrete_events),
-  stop=copy(system.dynms.stop_events),
 )
 
 """Return the scenarios for this model, keyed by scenario ID."""
@@ -342,23 +342,6 @@ function _heta_next_time(schedule_func, integrator)
   return next_time <= final_time ? convert(typeof(time), next_time) : nothing
 end
 
-function _heta_event_initialize(
-  initial_affect,
-  is_active;
-  after_affect! = integrator -> nothing,
-)
-  return function (callback, u, t, integrator)
-    if initial_affect && is_active(callback.condition(u, t, integrator))
-      callback.affect!(integrator)
-      after_affect!(integrator)
-      SciMLBase.derivative_discontinuity!(integrator, true)
-    else
-      SciMLBase.derivative_discontinuity!(integrator, false)
-    end
-    return nothing
-  end
-end
-
 # Solvers can opt into post-event step-size selection via an extension.
 # Sundials handles discontinuities through its own callback reinitialization
 # and does not implement SciMLBase.auto_dt_reset!.
@@ -429,58 +412,87 @@ struct HetaVectorCondition <: Function
 end
 (condition::HetaVectorCondition)(out, u, t, integrator) = condition.f(out, u, t, integrator)
 
-# Current solvers pass a signed mask for all simultaneous crossings. Some
-# solvers still pass the index of a single event.
-function _heta_vector_affect!(integrator, affects, triggered::AbstractVector)
-  for i in eachindex(affects)
-    iszero(triggered[i]) || affects[i](integrator)
-  end
-  return nothing
+# Only negative-to-positive crossings activate DynMS events. Current solvers
+# provide a signed mask (+1 rising, -1 falling); older solvers pass one index.
+_heta_upcrossing(triggered::AbstractVector, i, conditions, conditional, integrator) =
+  triggered[i] > 0
+function _heta_upcrossing(triggered::Integer, i, conditions, conditional, integrator)
+  triggered == i || return false
+  previous = conditions[i](integrator.uprev, integrator.tprev, integrator)
+  return conditional[i] ? !previous : previous < zero(previous)
 end
-function _heta_vector_affect!(integrator, affects, index::Integer)
-  affects[index](integrator)
+
+function _heta_vector_affect!(integrator, affects, conditions, conditional, stops, triggered)
+  modified = false
+  for i in eachindex(affects)
+    _heta_upcrossing(triggered, i, conditions, conditional, integrator) || continue
+    affects[i](integrator)
+    modified = true
+    stops[i] && break
+  end
+  SciMLBase.derivative_discontinuity!(integrator, modified)
   return nothing
 end
 
-function _heta_vector_callbacks!(callbacks, system, event_codes, events, active, positions;
-                                 discrete=false)
+function _heta_vector_callbacks!(callbacks, system, active, positions)
+  code = system.generated_code
+  event_codes = merge(code.continuous_events, code.discrete_events)
+  events = merge(system.dynms.continuous_events, system.dynms.discrete_events)
   # rootfind and save_positions belong to the whole callback, not to an entry.
-  groups = OrderedDict{Tuple{Bool,Bool},Vector{Symbol}}()
+  #= e.g. 
+  groups = OrderedDict(
+    (true,  (true, true))   => [:sw1, :sw2],
+    (true,  (false, false)) => [:sw3],
+    (false, (true, true))   => [:sw4],
+  )
+  =#
+  groups = OrderedDict{Tuple{Bool,Tuple{Bool,Bool}},Vector{Symbol}}()
   for id in keys(event_codes)
     active[id] || continue
-    push!(get!(groups, positions[id], Symbol[]), id)
+    push!(get!(groups, (events[id].rootfind, positions[id]), Symbol[]), id)
   end
-  for (save_positions, ids) in groups
+  for ((rootfind, save_positions), ids) in groups
     condition! = HetaVectorCondition(_heta_runtime_function(
-      _heta_vector_condition_function(system.dynms, [events[id] for id in ids]; discrete),
+      _heta_vector_condition_function(system.dynms, [events[id] for id in ids]),
     ))
-    affects = Function[_heta_event_affect(
-      _heta_runtime_function(event_codes[id].affect_func),
-      !isempty(events[id].discrete_affects),
-    ) for id in ids]
+    affects = Function[events[id].stop_simulation ? SciMLBase.terminate! :
+      _heta_event_affect(
+        _heta_runtime_function(event_codes[id].affect_func),
+        !isempty(events[id].discrete_affects),
+      ) for id in ids]
     initial_conditions = Function[
       _heta_runtime_function(event_codes[id].condition_func) for id in ids
     ]
     initial_affects = Bool[event_codes[id].initial_affect for id in ids]
+    conditional = Bool[_heta_has_boolean_condition(events[id]) for id in ids]
+    stops = Bool[events[id].stop_simulation for id in ids]
     initialize = function (callback, u, t, integrator)
       modified = false
       for i in eachindex(ids)
         initial_affects[i] || continue
         value = initial_conditions[i](u, t, integrator)
-        if discrete ? value : value >= zero(value)
+        if conditional[i] ? value : value >= zero(value)
           affects[i](integrator)
           modified = true
+          if stops[i]
+            # terminate! clears tstops; initialization still needs one to
+            # select the initial step before returning the terminated solve.
+            SciMLBase.add_tstop!(integrator, t)
+            break
+          end
         end
       end
       SciMLBase.derivative_discontinuity!(integrator, modified)
       return nothing
     end
-    affect! = (integrator, triggered) -> _heta_vector_affect!(integrator, affects, triggered)
+    affect! = (integrator, triggered) -> _heta_vector_affect!(
+      integrator, affects, initial_conditions, conditional, stops, triggered,
+    )
     push!(callbacks, SciMLBase.VectorContinuousCallback(
       condition!, affect!, length(ids);
       initialize, save_positions,
-      rootfind=discrete ? SciMLBase.NoRootFind : SciMLBase.LeftRootFind,
-      interp_points=discrete ? 0 : 10,
+      rootfind=rootfind ? SciMLBase.LeftRootFind : SciMLBase.NoRootFind,
+      interp_points=rootfind ? 10 : 0,
     ))
   end
   return callbacks
@@ -518,26 +530,7 @@ function _heta_callbacks(system::HetaODESystem, tspan, events_active=nothing, ev
     ))
   end
 
-  _heta_vector_callbacks!(callbacks, system, code.continuous_events,
-    system.dynms.continuous_events, active, positions)
-  _heta_vector_callbacks!(callbacks, system, code.discrete_events,
-    system.dynms.discrete_events, active, positions; discrete=true)
-
-  for (id, event) in code.stop_events
-    active[id] || continue
-    condition = _heta_runtime_function(event.condition_func)
-    affect! = integrator -> SciMLBase.terminate!(integrator)
-    # terminate! empties tstops. During initialization the solver still needs one
-    # stop to determine its initial dt, so retain the current time until solve!.
-    initialize = _heta_event_initialize(
-      event.initial_affect,
-      identity;
-      after_affect! = integrator -> SciMLBase.add_tstop!(integrator, integrator.t),
-    )
-    push!(callbacks, SciMLBase.DiscreteCallback(
-      condition, affect!; initialize, save_positions=positions[id],
-    ))
-  end
+  _heta_vector_callbacks!(callbacks, system, active, positions)
 
   callback = isempty(callbacks) ? nothing : SciMLBase.CallbackSet(callbacks...)
   return callback
