@@ -19,7 +19,7 @@ import SymbolicIndexingInterface as SII
 RuntimeGeneratedFunctions.init(@__MODULE__)
 
 # heta-compiler supported version
-const HETA_COMPILER_VERSION = "0.12.3"
+const HETA_COMPILER_VERSION = "0.12.4"
 const DYNMS_SUPPORTED_VERSIONS = ("0.2.1","0.2.2")
 const ARTIFACTS_TOML = joinpath(@__DIR__, "..", "Artifacts.toml")
 
